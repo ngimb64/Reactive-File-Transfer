@@ -1,0 +1,8 @@
+# Pycharm files #
+.idea/*
+
+# venv files #
+venv/*
+
+# Pycache #
+Modules/__pycache__
