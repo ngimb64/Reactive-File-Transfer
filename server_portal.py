@@ -10,7 +10,7 @@ from Modules.utils import error_query, print_err
 
 
 # Global variables #
-SERVER_IP = '0.0.0.0'
+SERVER_IP = '10.0.0.15'
 SERVER_PORT = 5001
 BUFFER_SIZE = 4096
 SEPARATOR = '<SEPARATOR>'
@@ -67,31 +67,36 @@ def main():
                 progress = tqdm(range(filesize), f'Receiving {filename}', unit='B',
                                 unit_scale=True, unit_divisor=1024)
 
-                # Open output file in write bytes mode #
-                with open(filename, 'wb') as out_file:
-                    while True:
-                        # Read chunk of binary data to write to file #
-                        bytes_read = client_socket.recv(BUFFER_SIZE)
-                        # If there is no more data to write #
-                        if not bytes_read:
-                            # Exit write loop #
-                            break
+                try:
+                    # Open output file in write bytes mode #
+                    with open(filename, 'wb') as out_file:
+                        while True:
+                            # Read chunk of binary data to write to file #
+                            bytes_read = client_socket.recv(BUFFER_SIZE)
+                            # If there is no more data to write #
+                            if not bytes_read:
+                                # Exit write loop #
+                                break
 
-                        # Write read chunk of socket data to file #
-                        out_file.write(bytes_read)
-                        # Update the progress bar display #
-                        progress.update(len(bytes_read))
+                            # Write read chunk of socket data to file #
+                            out_file.write(bytes_read)
+                            # Update the progress bar display #
+                            progress.update(len(bytes_read))
+
+                # If error occurs during file operation #
+                except (OSError, IOError) as file_err:
+                    error_query(filename, 'wb', file_err)
+                    ret = 1
 
     # If Ctrl + C is detected #
     except KeyboardInterrupt:
         print('Ctrl + C detected, exiting program ..')
 
-    # If error occurs during file operation #
-    except (OSError, IOError) as file_err:
-        error_query(filename, 'wb', file_err)
-        ret = 1
-
     finally:
         # close the client socket
         client_socket.close()
         sys.exit(ret)
+
+
+if __name__ == '__main__':
+    main()
