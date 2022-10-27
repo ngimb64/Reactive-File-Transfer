@@ -1,7 +1,20 @@
 """ Built-in modules """
 import logging
 import errno
+import socket
 import sys
+
+
+def chunk_bytes(bytes_string: bytes, length: int) -> bytes:
+    """
+    Generator to split the bytes string passed in by the chunk length passed in it should be split
+    into.
+
+    :param bytes_string:  The bytes string to be split into chunks specified by the length.
+    :param length:  How long each chunk of data should be.
+    :return:  The byte parsing generator.
+    """
+    return (bytes_string[0+i:length+i] for i in range(0, len(bytes_string), length))
 
 
 def error_query(err_path: str, err_mode: str, err_obj):
@@ -34,6 +47,31 @@ def error_query(err_path: str, err_mode: str, err_obj):
         print_err(f'Unexpected file operation occurred accessing {err_path}: {err_obj.errno}')
         logging.exception('Unexpected file operation occurred accessing %s: %s\n\n',
                           err_path, err_obj.errno)
+
+
+def port_check(ip: str, port: int) -> bool:
+    """
+    Creates TCP socket and checks to see if remote port on specified IP address is active.
+
+    :param ip:  The IP address of the remote host to connect to.
+    :param port:  The port of the remote host to connect to.
+    :return:  The True/False boolean value depending on operation success/failure.
+    """
+    # Set socket connection timeout #
+    socket.setdefaulttimeout(1)
+    # Create test socket #
+    test_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Attempt connection on remote port with test socket #
+    test_res = test_conn.connect_ex((ip, port))
+    # Terminate test socket #
+    test_conn.close()
+
+    # If connect operation was not successful #
+    if not test_res == 0:
+        return False
+
+    # If connection operation was successful #
+    return True
 
 
 def print_err(msg: str):
