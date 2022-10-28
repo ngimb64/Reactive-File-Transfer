@@ -3,6 +3,8 @@ import logging
 import errno
 import socket
 import sys
+# Custom modules #
+from file_portal import ERROR_QUEUE
 
 
 def chunk_bytes(bytes_string: bytes, length: int) -> bytes:
@@ -49,6 +51,25 @@ def error_query(err_path: str, err_mode: str, err_obj):
                           err_path, err_obj.errno)
 
 
+def int_convert(str_int: str) -> int:
+    """
+    Convert the passed in size as string to int, handles errors accordingly.
+
+    :param str_int:  The integer passed in string format.
+    :return:  The converted integer in it's original form.
+    """
+    try:
+        # Convert file size to integer #
+        raw_int = int(str_int)
+
+    # If value can not be converted to int (not string) #
+    except ValueError as val_err:
+        print_err(f'Error converting file size to integer in incoming thread {val_err}')
+        sys.exit(2)
+
+    return raw_int
+
+
 def port_check(ip: str, port: int) -> bool:
     """
     Creates TCP socket and checks to see if remote port on specified IP address is active.
@@ -59,7 +80,7 @@ def port_check(ip: str, port: int) -> bool:
     """
     # Set socket connection timeout #
     socket.setdefaulttimeout(1)
-    # Create test socket #
+    # Create test TCP socket #
     test_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Attempt connection on remote port with test socket #
     test_res = test_conn.connect_ex((ip, port))
@@ -82,4 +103,6 @@ def print_err(msg: str):
     :return:  Nothing
     """
     #  Print error via standard error #
-    print(f'\n* [ERROR] {msg} *\n', file=sys.stderr)
+    err_message = f'\n* [ERROR] {msg} *\n'
+    # Place formatted error message in error queue #
+    ERROR_QUEUE.put(err_message)
