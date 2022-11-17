@@ -100,7 +100,6 @@ def print_err(msg: str):
     :param msg:  Error message to be displayed.
     :return:  Nothing
     """
-    # Access error queue from other file #
     from file_portal import ERROR_QUEUE
     #  Print error via standard error #
     err_message = f'\n* [ERROR] {msg} *\n'
