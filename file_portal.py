@@ -16,10 +16,10 @@ from Modules.utils import chunk_bytes, error_query, int_convert, port_check, pri
 
 
 # Global variables #
-IP = '<Add_IP'
+IP = '<Add_IP>'
 PORT = 5001
 BUFFER_SIZE = 4096
-BUFFER_DIV = '<$>'
+BUFFER_DIV = b'<$>'
 OUTPUT_QUEUE = queue.Queue()
 ERROR_QUEUE = queue.Queue()
 SEND_QUEUE = queue.Queue()
@@ -180,7 +180,7 @@ def display_output():
 
 def client_init():
     # Set socket connection timeout #
-    socket.setdefaulttimeout(1)
+    socket.setdefaulttimeout(None)
     # Initialize the TCP socket instance #
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -282,8 +282,8 @@ def main():
 
                     OUTPUT_QUEUE.put(f'Data after send: {data}\n')
 
-                    # Remove chunk from outputs list #
-                    outputs.remove(data)
+                    # # Remove chunk from outputs list #
+                    # outputs.remove(data)
 
             for data in read_data:
                 # Receive 4096 bytes of data from remote host #
@@ -291,13 +291,10 @@ def main():
 
                 OUTPUT_QUEUE.put(f'Data received: {len(data)}\n\n{data}\n')
 
-                # Put the chunk of received data in the read queue #
                 READ_QUEUE.put(data)
 
-                # data.close()
-
-                # Remove the received data from inputs list #
-                inputs.remove(data)
+                # # Remove the received data from inputs list #
+                # inputs.remove(data)
                 break
 
             for data in conn_errs:
@@ -312,6 +309,8 @@ def main():
 
     except KeyboardInterrupt:
         OUTPUT_QUEUE.put('\nCtrl + C detected .. exiting program')
+        # Close the connection #
+        conn.close()
 
 
 if __name__ == '__main__':
