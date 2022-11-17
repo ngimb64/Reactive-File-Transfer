@@ -16,7 +16,7 @@ from Modules.utils import chunk_bytes, error_query, int_convert, port_check, pri
 
 
 # Global variables #
-IP = '<Add_IP'
+IP = '<Add_IP>'
 PORT = 5001
 BUFFER_SIZE = 4096
 BUFFER_DIV = '<$>'
@@ -180,7 +180,7 @@ def display_output():
 
 def client_init():
     # Set socket connection timeout #
-    socket.setdefaulttimeout(1)
+    socket.setdefaulttimeout(None)
     # Initialize the TCP socket instance #
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 

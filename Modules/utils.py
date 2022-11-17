@@ -3,11 +3,9 @@ import logging
 import errno
 import socket
 import sys
-# Custom modules #
-from file_portal import ERROR_QUEUE
 
 
-def chunk_bytes(bytes_string: bytes, length: int) -> bytes:
+def chunk_bytes(bytes_string: bytes, length: int):
     """
     Generator to split the bytes string passed in by the chunk length passed in it should be split
     into.
@@ -102,6 +100,7 @@ def print_err(msg: str):
     :param msg:  Error message to be displayed.
     :return:  Nothing
     """
+    from file_portal import ERROR_QUEUE
     #  Print error via standard error #
     err_message = f'\n* [ERROR] {msg} *\n'
     # Place formatted error message in error queue #
