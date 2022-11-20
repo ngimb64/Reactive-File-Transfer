@@ -65,7 +65,7 @@ def auto_file_incoming():
                     incoming_data = READ_QUEUE.get()
 
                     # If the incoming data specifies end of file (EOF) #
-                    if incoming_data == b'<END_FILE>':
+                    if incoming_data == b'<END_FILE>\r\n':
                         # Exit the file write loop #
                         break
 
@@ -184,7 +184,7 @@ def client_init():
     # Initialize the TCP socket instance #
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    print(f'[+] Attempting to connect to {IP} on {PORT} with 5 second sleep intervals')
+    print(f'[+] Attempting to connect to {IP} on {PORT}')
 
     # While the connection attempt return code is not 0 (successful) #
     while True:
@@ -192,13 +192,14 @@ def client_init():
         res = sock.connect_ex((IP, PORT))
         # If the connection attempt was not successful #
         if res != 0:
+            print('\n[+] Connection failed .. sleeping 5 seconds and retrying')
             # Sleep program for 5 seconds and re-iterate loop #
             time.sleep(5)
             continue
 
         break
 
-    print(f'[!] Connection established to {IP}:{PORT}')
+    print(f'\n[!] Connection established to {IP}:{PORT}')
 
     # Set socket to non-blocking #
     sock.setblocking(False)
@@ -229,7 +230,7 @@ def server_init():
     client_sock.setblocking(False)
 
     # Notify user of successful connection #
-    print(f'[!] Connection established to {address}:{PORT}')
+    print(f'\n[!] Connection established to {address}:{PORT}')
 
     return client_sock
 
@@ -270,41 +271,40 @@ def main():
 
             # If the send queue has data to send #
             if not SEND_QUEUE.empty():
-                # Iterate through
-                for data in send_data:
+                # Iterate through available send sockets #
+                for sock in send_data:
                     # Get a chunk of data from send queue #
                     chunk = SEND_QUEUE.get()
 
-                    OUTPUT_QUEUE.put(f'Data before send: {data}\n')
+                    OUTPUT_QUEUE.put(f'Data to be sent: {chunk.decode()}\n')
 
                     # Send the chunk of data through the TCP connection #
-                    data = data.sendall(chunk)
+                    sock.sendall(chunk + b'\r\n')
+                    # Remove chunk from outputs list #
+                    outputs.remove(sock)
 
-                    OUTPUT_QUEUE.put(f'Data after send: {data}\n')
-
-                    # # Remove chunk from outputs list #
-                    # outputs.remove(data)
-
-            for data in read_data:
+            # Iterate through available receive sockets #
+            for sock in read_data:
                 # Receive 4096 bytes of data from remote host #
-                data = data.recv(BUFFER_SIZE)
+                data = sock.recv(BUFFER_SIZE)
 
-                OUTPUT_QUEUE.put(f'Data received: {len(data)}\n\n{data}\n')
+                OUTPUT_QUEUE.put(f'Data received: {data.decode()}\n')
 
+                # Put received data into read queue #
                 READ_QUEUE.put(data)
 
-                # # Remove the received data from inputs list #
-                # inputs.remove(data)
+                # Close the read socket #
+                sock.close()
+                # Remove socket from inputs list #
+                inputs.remove(sock)
                 break
 
-            for data in conn_errs:
+            for sock in conn_errs:
                 # Put message in error queue to be displayed stderr #
-                ERROR_QUEUE.put(data)
-                # Log the exception #
-                logging.exception('Error occurred during socket operation: %s\n\n', data)
+                ERROR_QUEUE.put(f'Error occurred during socket operation: {sock}')
                 # Remove exception data in inputs in outputs list #
-                inputs.remove(data)
-                outputs.remove(data)
+                inputs.remove(sock)
+                outputs.remove(sock)
                 break
 
     except KeyboardInterrupt:

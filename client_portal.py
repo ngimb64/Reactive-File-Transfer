@@ -9,7 +9,7 @@ from Modules.utils import error_query
 
 
 # Global variables #
-CLIENT_IP = '10.0.0.15'
+CLIENT_IP = '<Add_IP>'
 CLIENT_PORT = 5001
 BUFFER_SIZE = 4096
 SEPARATOR = '<SEPARATOR>'
