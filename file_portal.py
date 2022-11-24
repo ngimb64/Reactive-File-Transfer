@@ -12,7 +12,7 @@ from tqdm import tqdm
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 # Custom modules #
-from Modules.utils import chunk_bytes, error_query, int_convert, port_check, print_err
+from Modules.utils import chunk_bytes, error_query, int_convert, port_check
 
 
 # Global variables #
@@ -35,6 +35,7 @@ def auto_file_incoming():
 
         # Get the initial string with the file name and size #
         title_chunk = READ_QUEUE.get()
+
         # Parse the file name and size from the initial string with <$> divider #
         file_name, file_size = title_chunk.split(BUFFER_DIV)
         # Strip any extra path from file name #
@@ -115,9 +116,9 @@ class OutgoingFileDetector(FileSystemEventHandler):
             SEND_QUEUE.put(start_bytes)
 
             # If the file has more than one chunk of data to read #
-            if len(data) > BUFFER_SIZE:
+            if len(data) > BUFFER_SIZE - 2:
                 # Iterate through read file data and split it into chunks 4096 bytes or fewer #
-                for chunk in list(chunk_bytes(data, BUFFER_SIZE)):
+                for chunk in list(chunk_bytes(data, BUFFER_SIZE - 2)):
                     # Put data in send queue and update progress bar #
                     SEND_QUEUE.put(chunk)
                     # Put data in send queue and update progress bar #
@@ -174,8 +175,10 @@ def display_output():
         if not ERROR_QUEUE.empty():
             # Get error message from error queue #
             error_msg = ERROR_QUEUE.get()
+            # Format error message #
+            err_message = f'\n* [ERROR] {error_msg} *\n'
             # Display error message via stderr #
-            print(error_msg, file=sys.stderr)
+            print(err_message, file=sys.stderr)
 
 
 def client_init():
@@ -213,13 +216,15 @@ def server_init():
     # Use the hostname to get the IP Address #
     ip = socket.gethostbyname(hostname)
     # Set socket connection timeout #
-    socket.setdefaulttimeout(None)
+    socket.setdefaulttimeout(0.5)
     # Initialize the TCP socket instance #
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Bind socket to server local IP and port #
     sock.bind((ip, PORT))
     # Allow a single incoming socket connection #
     sock.listen(1)
+
+    # TODO: only handling one connection, add code to reset connection for second final attempt
 
     # Notify user host is acting as server #
     print(f'[+] No remote server present .. serving on ({hostname}||{ip}):{PORT}')
@@ -288,16 +293,18 @@ def main():
                 # Receive 4096 bytes of data from remote host #
                 data = sock.recv(BUFFER_SIZE)
 
-                OUTPUT_QUEUE.put(f'Data received: {data.decode()}\n')
+                # If the socket received data #
+                if len(data) > 0:
+                    OUTPUT_QUEUE.put(f'Data received: {data.decode()}\n')
 
-                # Put received data into read queue #
-                READ_QUEUE.put(data)
+                    # Put received data into read queue #
+                    READ_QUEUE.put(data)
 
-                # Close the read socket #
-                sock.close()
-                # Remove socket from inputs list #
-                inputs.remove(sock)
-                break
+                    # Close the read socket #
+                    sock.close()
+                    # Remove socket from inputs list #
+                    inputs.remove(sock)
+                    break
 
             for sock in conn_errs:
                 # Put message in error queue to be displayed stderr #
@@ -342,7 +349,7 @@ if __name__ == '__main__':
     # If unknown exception occurs #
     except Exception as err:
         # Print and log unknown exception #
-        print_err(f'Unknown exception occurred: {err}')
+        # ERROR_QUEUE.put(f'Unknown exception occurred: {err}')
         logging.exception('Unknown exception occurred: %s\n\n', err)
         ret = 1
 
