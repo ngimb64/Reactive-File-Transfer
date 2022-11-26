@@ -223,17 +223,17 @@ def server_init():
     sock.bind((ip, PORT))
     # Allow a single incoming socket connection #
     sock.listen(1)
-
-    # TODO: only handling one connection, add code to reset connection for second final attempt
-
     # Notify user host is acting as server #
     print(f'[+] No remote server present .. serving on ({hostname}||{ip}):{PORT}')
+    # Wait until test connection is received from client socket #
+    _, _ = sock.accept()
 
-    # Wait until connection is received from client socket #
+    # Change the connection timeout to infinity after closing test socket #
+    socket.setdefaulttimeout(None)
+    # Wait to accept final connection #
     client_sock, address = sock.accept()
     # Set the socket to non-blocking #
     client_sock.setblocking(False)
-
     # Notify user of successful connection #
     print(f'\n[!] Connection established to {address}:{PORT}')
 
@@ -349,7 +349,7 @@ if __name__ == '__main__':
     # If unknown exception occurs #
     except Exception as err:
         # Print and log unknown exception #
-        # ERROR_QUEUE.put(f'Unknown exception occurred: {err}')
+        ERROR_QUEUE.put(f'Unknown exception occurred: {err}')
         logging.exception('Unknown exception occurred: %s\n\n', err)
         ret = 1
 
