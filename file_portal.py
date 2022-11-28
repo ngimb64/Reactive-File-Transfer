@@ -6,6 +6,7 @@ import select
 import socket
 import sys
 import time
+from pathlib import Path
 from threading import Thread
 # External modules #
 from tqdm import tqdm
@@ -42,20 +43,15 @@ def auto_file_incoming():
         file_name = os.path.basename(file_name.decode())
         # Convert the file size to integer #
         file_size = int_convert(file_size.decode())
-
-        # If OS is Windows #
-        if os.name == 'nt':
-            file_path = f'{in_path}\\{file_name}'
-        # If OS is Linux #
-        else:
-            file_path = f'{in_path}/{file_name}'
+        # Format the incoming file path #
+        file_path = in_path / file_name
 
         # Setup progress-bar for file input #
         progress = tqdm(range(file_size), f'Receiving {file_name}', unit='B',
                         unit_scale=True, unit_divisor=BUFFER_SIZE)
         try:
             # Open the incoming file name in append bytes mode #
-            with open(file_path, 'ab') as in_file:
+            with file_path.open('ab') as in_file:
                 while True:
                     # If the read queue waiting for file data #
                     if READ_QUEUE.empty():
@@ -85,13 +81,8 @@ class OutgoingFileDetector(FileSystemEventHandler):
     def on_modified(self, event):
         # Iterate through the files in the outgoing folder #
         for file in os.scandir(out_path):
-            # If OS is Windows #
-            if os.name == 'nt':
-                file_path = f'{out_path}\\{file.name}'
-            # If OS is Linux #
-            else:
-                file_path = f'{out_path}/{file.name}'
-
+            # Format the the outgoing file path name #
+            file_path = out_path / file.name
             # Get the size of the file #
             file_size = os.path.getsize(file_path)
             # Format file name and size with divider as start bytes #
@@ -99,7 +90,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
 
             try:
                 # Open file in bytes read mode to put in send queue #
-                with open(file_path, 'rb') as send_file:
+                with file_path.open('rb') as send_file:
                     data = send_file.read()
 
             # If error occurs during file operation #
@@ -213,10 +204,15 @@ def client_init():
 def server_init():
     # Get the system hostname #
     hostname = socket.gethostname()
+
+    # If the OS is not windows #
+    if os.name != 'nt':
+        hostname = f'{hostname}.local'
+
     # Use the hostname to get the IP Address #
     ip = socket.gethostbyname(hostname)
     # Set socket connection timeout #
-    socket.setdefaulttimeout(0.5)
+    socket.setdefaulttimeout(None)
     # Initialize the TCP socket instance #
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Bind socket to server local IP and port #
@@ -228,8 +224,16 @@ def server_init():
     # Wait until test connection is received from client socket #
     _, _ = sock.accept()
 
-    # Change the connection timeout to infinity after closing test socket #
-    socket.setdefaulttimeout(None)
+    try:
+        # Once test connection is active, continually send null bytes
+        # till an error is raised due to the connection closing #
+        while True:
+            sock.sendall(b'\x00')
+
+    # When error is raised because client side is closed #
+    except socket.error:
+        pass
+
     # Wait to accept final connection #
     client_sock, address = sock.accept()
     # Set the socket to non-blocking #
@@ -322,24 +326,19 @@ def main():
 
 if __name__ == '__main__':
     # Get the current working directory #
-    cwd = os.getcwd()
+    path = Path('.')
+    # Group critical folders for operation #
     folders = ('Incoming', 'Outgoing')
-
-    # If OS is Windows #
-    if os.name == 'nt':
-        path = f'{cwd}\\'
-        in_path = f'{path}\\{folders[0]}'
-        out_path = f'{path}\\{folders[1]}'
-    # If OS is Linux #
-    else:
-        path = f'{cwd}/'
-        in_path = f'{path}/{folders[0]}'
-        out_path = f'{path}/{folders[1]}'
+    # Format log path and name #
+    log_name = path / 'portal_client.log'
+    # Format incoming/outgoing folder path and name #
+    in_path = path / folders[0]
+    out_path = path / folders[1]
 
     # Initialize the logging facilities #
-    logging.basicConfig(level=logging.DEBUG, filename=f'{path}portal_client.log')
+    logging.basicConfig(level=logging.DEBUG, filename=str(log_name.resolve()))
     # Create non-existing data transfer directories #
-    [os.mkdir(folder) for folder in folders if not os.path.isdir(folder)]
+    [Path(folder).mkdir(exist_ok=True) for folder in folders]
     # Exit code #
     ret = 0
 
