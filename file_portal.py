@@ -81,7 +81,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
     def on_modified(self, event):
         # Iterate through the files in the outgoing folder #
         for file in os.scandir(out_path):
-            # Format the the outgoing file path name #
+            # Format the outgoing file path name #
             file_path = out_path / file.name
             # Get the size of the file #
             file_size = os.path.getsize(file_path)
@@ -130,7 +130,7 @@ def auto_file_outgoing():
     # Initialize the observer object #
     observer = Observer()
     # Schedule the file monitoring object to run #
-    observer.schedule(file_monitor, out_path, recursive=True)
+    observer.schedule(file_monitor, str(out_path.resolve()), recursive=True)
     # Start the file monitoring object #
     observer.start()
 
@@ -210,17 +210,17 @@ def server_init():
         hostname = f'{hostname}.local'
 
     # Use the hostname to get the IP Address #
-    ip = socket.gethostbyname(hostname)
+    ip_addr = socket.gethostbyname(hostname)
     # Set socket connection timeout #
     socket.setdefaulttimeout(None)
     # Initialize the TCP socket instance #
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Bind socket to server local IP and port #
-    sock.bind((ip, PORT))
+    sock.bind((ip_addr, PORT))
     # Allow a single incoming socket connection #
     sock.listen(1)
     # Notify user host is acting as server #
-    print(f'[+] No remote server present .. serving on ({hostname}||{ip}):{PORT}')
+    print(f'[+] No remote server present .. serving on ({hostname}||{ip_addr}):{PORT}')
     # Wait until test connection is received from client socket #
     _, _ = sock.accept()
 
@@ -267,7 +267,7 @@ def main():
     # Start the file writer incoming data daemon thread #
     auto_file_writer.start()
 
-    OUTPUT_QUEUE.put(f'\n[!] File system monitoring activated')
+    OUTPUT_QUEUE.put('\n[!] File system monitoring activated')
 
     # Pass socket instance to list to get inputs/outputs #
     inputs = [conn]
@@ -340,7 +340,7 @@ if __name__ == '__main__':
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
     # Exit code #
-    ret = 0
+    RET = 0
 
     try:
         main()
@@ -350,6 +350,6 @@ if __name__ == '__main__':
         # Print and log unknown exception #
         ERROR_QUEUE.put(f'Unknown exception occurred: {err}')
         logging.exception('Unknown exception occurred: %s\n\n', err)
-        ret = 1
+        RET = 1
 
-    sys.exit(ret)
+    sys.exit(RET)

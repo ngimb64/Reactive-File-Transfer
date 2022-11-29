@@ -3,7 +3,6 @@ import logging
 import errno
 import socket
 import sys
-from file_portal import ERROR_QUEUE
 
 
 def chunk_bytes(bytes_string: bytes, length: int):
@@ -27,6 +26,8 @@ def error_query(err_path: str, err_mode: str, err_obj):
     :param err_obj:  The error message instance.
     :return:  Nothing
     """
+    from file_portal import ERROR_QUEUE
+
     # If file does not exist #
     if err_obj.errno == errno.ENOENT:
         ERROR_QUEUE(f'{err_path} does not exist')
@@ -57,6 +58,8 @@ def int_convert(str_int: str) -> int:
     :param str_int:  The integer passed in string format.
     :return:  The converted integer in it's original form.
     """
+    from file_portal import ERROR_QUEUE
+
     try:
         # Convert file size to integer #
         raw_int = int(str_int)
