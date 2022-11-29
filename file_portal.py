@@ -43,6 +43,16 @@ def auto_file_incoming():
         file_name = os.path.basename(file_name.decode())
         # Convert the file size to integer #
         file_size = int_convert(file_size.decode())
+
+        # If the file conversion function returns string indicating error #
+        if isinstance(file_size, str):
+            # Put the returned error in error queue for print thread #
+            ERROR_QUEUE.put(file_size)
+            # Halt a second to print error #
+            time.sleep(1)
+            # Exit with error code #
+            sys.exit(2)
+
         # Format the incoming file path #
         file_path = in_path / file_name
 
@@ -73,8 +83,9 @@ def auto_file_incoming():
 
         # If error occurs during file operation #
         except (IOError, OSError) as file_err:
-            # Print the file error and log #
-            error_query(file_path, 'ab', file_err)
+            # Lookup the file error and put in error queue for print thread #
+            err_msg = error_query(file_path, 'ab', file_err)
+            ERROR_QUEUE.put(err_msg)
 
 
 class OutgoingFileDetector(FileSystemEventHandler):
@@ -95,8 +106,9 @@ class OutgoingFileDetector(FileSystemEventHandler):
 
             # If error occurs during file operation #
             except (IOError, OSError) as file_err:
-                # Look up file error, print & log #
-                error_query(file_path, 'rb', file_err)
+                # Lookup the file error and put in error queue for print thread #
+                err_msg = error_query(file_path, 'rb', file_err)
+                ERROR_QUEUE.put(err_msg)
                 continue
 
             # Setup progress-bar for file output #
@@ -272,6 +284,8 @@ def main():
     # Pass socket instance to list to get inputs/outputs #
     inputs = [conn]
     outputs = [conn]
+
+    # TODO: try to fix socket error occurring on client side #
 
     try:
         while True:
