@@ -28,6 +28,12 @@ READ_QUEUE = queue.Queue()
 
 
 def auto_file_incoming():
+    """
+    Polls the read queue for incoming chunks of data and writes data to file name until delimiter
+    is detected.
+
+    :return:  Nothing, runs as background daemon thread until main thread exits.
+    """
     while True:
         # If the read queue is empty #
         if READ_QUEUE.empty():
@@ -89,7 +95,19 @@ def auto_file_incoming():
 
 
 class OutgoingFileDetector(FileSystemEventHandler):
+    """
+    Watchdog file system monitoring class that continuously monitors the outgoing data directory to
+    automatically read any modification (added files) data and feed into the send queue.
+    """
     def on_modified(self, event):
+        """
+        Watchdog event is triggered per file system modification is designated outgoing folder.
+        Data is read from the event file and feed into the send queue to be transferred through the
+        network socket.
+
+        :param event:  File system event that occurred.
+        :return:  Nothing
+        """
         # Iterate through the files in the outgoing folder #
         for file in os.scandir(out_path):
             # Format the outgoing file path name #
@@ -137,6 +155,12 @@ class OutgoingFileDetector(FileSystemEventHandler):
 
 
 def auto_file_outgoing():
+    """
+    Registers watchdog file system monitoring directory and continually monitors file system to
+    trigger OutgoingFileDetector() watchdog event.
+
+    :return:  Nothing, runs as background daemon thread until main thread exits.
+    """
     # Initialize BackupHandler object #
     file_monitor = OutgoingFileDetector()
     # Initialize the observer object #
@@ -161,6 +185,11 @@ def auto_file_outgoing():
 
 
 def display_output():
+    """
+    Print thread polls output and error queue to get output to display via stdout or stderr.
+
+    :return:  Nothing, runs as background daemon thread until main thread exits.
+    """
     while True:
         # If the output and error queues are empty #
         if OUTPUT_QUEUE.empty() and ERROR_QUEUE.empty():
@@ -185,6 +214,14 @@ def display_output():
 
 
 def client_init():
+    """
+    Function is called after test socket connection attempt is successful indicating a server is
+    already established on the other end. A final socket connection is re-setup and continually
+    attempted on five second intervals until successful, set to non-blocking, and returned to the
+    main thread.
+
+    :return:  The established client network socket instance.
+    """
     # Set socket connection timeout #
     socket.setdefaulttimeout(None)
     # Initialize the TCP socket instance #
@@ -214,10 +251,21 @@ def client_init():
 
 
 def server_init():
+    """
+    Function is called after test socket connection attempt is not successful indicating a server
+    is current not present on the other end. The hostname is queried, then used to get the IP
+    address; which is used to bind to the port set in the header of the file. The server then waits
+    for the incoming test connection, which when connected, null bytes are continually sent until an
+    error is raised to the client side timing out. The raised error is ignored and execution is
+    passed to wait for the final incoming connection. Once established, the client socket is set to
+    non-blocking and returned to the main thread.
+
+    :return:  The connected network socket client instance.
+    """
     # Get the system hostname #
     hostname = socket.gethostname()
 
-    # If the OS is not windows #
+    # If the OS is not Windows #
     if os.name != 'nt':
         hostname = f'{hostname}.local'
 
@@ -257,6 +305,16 @@ def server_init():
 
 
 def main():
+    """
+    Runs test network check to see if remote system is already established as a server. Depending on
+    the result, the system is established as client or server to avoid centralized server. After
+    the network socket is established, background daemon threads are spawned to display program
+    output, handle monitoring outing data directory, and handle writing incoming data. Finally, the
+    main thread polls the network socket in a non-blocking manner; getting data from the send queue
+    and sending it, and reading data from the socket and putting it in the read queue.
+
+    :return:  Nothing
+    """
     # If the remote host is already listening for connections #
     if port_check(IP, PORT):
         # Act as the client side of connection #
@@ -285,17 +343,15 @@ def main():
     inputs = [conn]
     outputs = [conn]
 
-    # TODO: try to fix socket error occurring on client side #
-
     try:
         while True:
             # Polls socket inputs, outputs, and errors. Returns socket file descriptor lists tuple #
             read_data, send_data, conn_errs = select.select(inputs, outputs, inputs, 0.5)
 
-            # If the send queue has data to send #
-            if not SEND_QUEUE.empty():
-                # Iterate through available send sockets #
-                for sock in send_data:
+            # Iterate through available send sockets #
+            for sock in send_data:
+                # If the send queue has data to send #
+                if not SEND_QUEUE.empty():
                     # Get a chunk of data from send queue #
                     chunk = SEND_QUEUE.get()
 
@@ -303,8 +359,9 @@ def main():
 
                     # Send the chunk of data through the TCP connection #
                     sock.sendall(chunk + b'\r\n')
-                    # Remove chunk from outputs list #
-                    outputs.remove(sock)
+
+                # Remove chunk from outputs list #
+                outputs.remove(sock)
 
             # Iterate through available receive sockets #
             for sock in read_data:
@@ -318,11 +375,11 @@ def main():
                     # Put received data into read queue #
                     READ_QUEUE.put(data)
 
-                    # Close the read socket #
-                    sock.close()
-                    # Remove socket from inputs list #
-                    inputs.remove(sock)
-                    break
+                # Close the read socket #
+                sock.close()
+                # Remove socket from inputs list #
+                inputs.remove(sock)
+                break
 
             for sock in conn_errs:
                 # Put message in error queue to be displayed stderr #
