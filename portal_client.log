@@ -1,8 +1,0 @@
-ERROR:root:Unknown exception occurred: list.remove(x): x not in list
-
-Traceback (most recent call last):
-  File "C:\Users\TheBugFather\Documents\Code\File-Portal\file_portal.py", line 340, in <module>
-    main()
-  File "C:\Users\TheBugFather\Documents\Code\File-Portal\file_portal.py", line 297, in main
-    inputs.remove(data)
-ValueError: list.remove(x): x not in list

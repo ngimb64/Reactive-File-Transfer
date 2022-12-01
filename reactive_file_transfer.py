@@ -348,10 +348,10 @@ def main():
             # Polls socket inputs, outputs, and errors. Returns socket file descriptor lists tuple #
             read_data, send_data, conn_errs = select.select(inputs, outputs, inputs, 0.5)
 
-            # Iterate through available send sockets #
-            for sock in send_data:
-                # If the send queue has data to send #
-                if not SEND_QUEUE.empty():
+            # If the send queue has data to send #
+            if not SEND_QUEUE.empty():
+                # Iterate through available send sockets #
+                for sock in send_data:
                     # Get a chunk of data from send queue #
                     chunk = SEND_QUEUE.get()
 
@@ -360,8 +360,8 @@ def main():
                     # Send the chunk of data through the TCP connection #
                     sock.sendall(chunk + b'\r\n')
 
-                # Remove chunk from outputs list #
-                outputs.remove(sock)
+                    # Remove chunk from outputs list #
+                    outputs.remove(sock)
 
             # Iterate through available receive sockets #
             for sock in read_data:
@@ -389,10 +389,17 @@ def main():
                 outputs.remove(sock)
                 break
 
+    # If Ctrl + C is detected #
     except KeyboardInterrupt:
-        OUTPUT_QUEUE.put('\nCtrl + C detected .. exiting program')
-        # Close the connection #
-        conn.close()
+        OUTPUT_QUEUE.put('\n[!] Ctrl + C detected .. exiting program')
+
+    # If an error is raised because the
+    # other end of the connection closed #
+    except OSError:
+        OUTPUT_QUEUE.put('\n[!] Connection was closed on the other end .. exiting program')
+
+    # Close the connection #
+    conn.close()
 
 
 if __name__ == '__main__':
@@ -401,7 +408,7 @@ if __name__ == '__main__':
     # Group critical folders for operation #
     folders = ('Incoming', 'Outgoing')
     # Format log path and name #
-    log_name = path / 'portal_client.log'
+    log_name = path / 'rft.log'
     # Format incoming/outgoing folder path and name #
     in_path = path / folders[0]
     out_path = path / folders[1]
