@@ -78,7 +78,7 @@ def auto_file_incoming():
                     incoming_data = READ_QUEUE.get()
 
                     # If the incoming data specifies end of file (EOF) #
-                    if incoming_data == b'<END_FILE>\r\n':
+                    if incoming_data == b'<END_FILE>':
                         # Exit the file write loop #
                         break
 
@@ -103,7 +103,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
         """
         Watchdog event is triggered per file system modification is designated outgoing folder.
         Data is read from the event file and feed into the send queue to be transferred through the
-        network socket.
+        network socket in chunks of data set by BUFFER_SIZE pseudo-constant.
 
         :param event:  File system event that occurred.
         :return:  Nothing
@@ -115,7 +115,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
             # Get the size of the file #
             file_size = os.path.getsize(file_path)
             # Format file name and size with divider as start bytes #
-            start_bytes = f'{file.name}{BUFFER_DIV}{file_size}'.encode()
+            start_bytes = f'{file.name}{BUFFER_DIV.decode()}{file_size}'.encode()
 
             try:
                 # Open file in bytes read mode to put in send queue #
@@ -137,9 +137,9 @@ class OutgoingFileDetector(FileSystemEventHandler):
             SEND_QUEUE.put(start_bytes)
 
             # If the file has more than one chunk of data to read #
-            if len(data) > BUFFER_SIZE - 2:
+            if len(data) > BUFFER_SIZE:
                 # Iterate through read file data and split it into chunks 4096 bytes or fewer #
-                for chunk in list(chunk_bytes(data, BUFFER_SIZE - 2)):
+                for chunk in list(chunk_bytes(data, BUFFER_SIZE)):
                     # Put data in send queue and update progress bar #
                     SEND_QUEUE.put(chunk)
                     # Put data in send queue and update progress bar #
@@ -172,8 +172,9 @@ def auto_file_outgoing():
 
     # Run file system monitor until Ctrl+C #
     try:
+        # Poll designed folder in file system for modifications (added files #
         while True:
-            time.sleep(15)
+            time.sleep(5)
 
     # If Ctrl+C is detected #
     except KeyboardInterrupt:
@@ -282,13 +283,13 @@ def server_init():
     # Notify user host is acting as server #
     print(f'[+] No remote server present .. serving on ({hostname}||{ip_addr}):{PORT}')
     # Wait until test connection is received from client socket #
-    _, _ = sock.accept()
+    test_sock, _ = sock.accept()
 
     try:
         # Once test connection is active, continually send null bytes
         # till an error is raised due to the connection closing #
         while True:
-            sock.sendall(b'\x00')
+            test_sock.sendall(b'\x00')
 
     # When error is raised because client side is closed #
     except socket.error:
@@ -324,14 +325,10 @@ def main():
         # Act as the server side of the connection #
         conn = server_init()
 
-    # Initialize the output display thread #
-    output_thread = Thread(target=display_output, daemon=True, args=())
     # Initialize the automated file sender daemon thread instance #
     auto_file_reader = Thread(target=auto_file_outgoing, daemon=True, args=())
     # Initialize the automated file reader daemon thread instance #
     auto_file_writer = Thread(target=auto_file_incoming, daemon=True, args=())
-    # Start the program output daemon thread #
-    output_thread.start()
     # Start the file reader outgoing data daemon thread #
     auto_file_reader.start()
     # Start the file writer incoming data daemon thread #
@@ -358,7 +355,7 @@ def main():
                     OUTPUT_QUEUE.put(f'Data to be sent: {chunk.decode()}\n')
 
                     # Send the chunk of data through the TCP connection #
-                    sock.sendall(chunk + b'\r\n')
+                    sock.sendall(chunk)
 
                     # Remove chunk from outputs list #
                     outputs.remove(sock)
@@ -417,6 +414,10 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, filename=str(log_name.resolve()))
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
+    # Initialize the output display thread #
+    output_thread = Thread(target=display_output, daemon=True, args=())
+    # Start the program output daemon thread #
+    output_thread.start()
     # Exit code #
     RET = 0
 
