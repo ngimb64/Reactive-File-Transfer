@@ -16,36 +16,31 @@ def chunk_bytes(bytes_string: bytes, length: int):
     return (bytes_string[0+i:length+i] for i in range(0, len(bytes_string), length))
 
 
-def error_query(err_path: str, err_mode: str, err_obj) -> str:
+def error_query(err_path: str, err_mode: str, err_obj):
     """
     Looks up the errno message to get description.
 
     :param err_path:  The path to file where the file operation occurred.
     :param err_mode:  The file mode during the error.
     :param err_obj:  The error message instance.
-    :return:  The formatted error string to be put into the error queue.
+    :return:  Nothing
     """
     # If file does not exist #
     if err_obj.errno == errno.ENOENT:
         logging.exception('%s does not exist\n\n', err_path)
-        return f'{err_path} does not exist'
 
     # If the file does not have read/write access #
     elif err_obj.errno == errno.EPERM:
         logging.exception('%s does not have permissions for %s file mode\n\n', err_path, err_mode)
-        return f'{err_path} does not have permissions for {err_mode} file mode, if file exists ' \
-               'confirm it is closed'
 
     # File IO error occurred #
     elif err_obj.errno == errno.EIO:
         logging.exception('IO error occurred during %s mode on %s\n\n', err_mode, err_path)
-        return f'IO error occurred during {err_mode} mode on {err_path}'
 
     # If other unexpected file operation occurs #
     else:
         logging.exception('Unexpected file operation occurred accessing %s: %s\n\n',
                           err_path, err_obj.errno)
-        return f'Unexpected file operation occurred accessing {err_path}: {err_obj.errno}'
 
 
 def int_convert(str_int: str):

@@ -17,7 +17,7 @@ from Modules.utils import chunk_bytes, error_query, int_convert, port_check
 
 
 # Global variables #
-IP = '<Add_IP>'
+TARGET_IP = '<Add_IP>'
 PORT = 5001
 BUFFER_SIZE = 4096
 BUFFER_DIV = b'<$>'
@@ -54,17 +54,12 @@ def auto_file_incoming():
         if isinstance(file_size, str):
             # Put the returned error in error queue for print thread #
             ERROR_QUEUE.put(file_size)
-            # Halt a second to print error #
             time.sleep(1)
-            # Exit with error code #
-            sys.exit(2)
+            sys.exit(4)
 
         # Format the incoming file path #
         file_path = in_path / file_name
 
-        # Setup progress-bar for file input #
-        progress = tqdm(range(file_size), f'Receiving {file_name}', unit='B',
-                        unit_scale=True, unit_divisor=BUFFER_SIZE)
         try:
             # Open the incoming file name in append bytes mode #
             with file_path.open('ab') as in_file:
@@ -84,15 +79,11 @@ def auto_file_incoming():
 
                     # Write the incoming data to the specified file name #
                     in_file.write(incoming_data)
-                    # Update the progress bar with the number of bytes written to file #
-                    progress.update(len(incoming_data))
 
         # If error occurs during file operation #
         except (IOError, OSError) as file_err:
             # Lookup the file error and put in error queue for print thread #
-            err_msg = error_query(file_path, 'ab', file_err)
-            ERROR_QUEUE.put(err_msg)
-
+            error_query(file_path, 'ab', file_err)
 
 class OutgoingFileDetector(FileSystemEventHandler):
     """
@@ -125,13 +116,8 @@ class OutgoingFileDetector(FileSystemEventHandler):
             # If error occurs during file operation #
             except (IOError, OSError) as file_err:
                 # Lookup the file error and put in error queue for print thread #
-                err_msg = error_query(file_path, 'rb', file_err)
-                ERROR_QUEUE.put(err_msg)
+                error_query(file_path, 'rb', file_err)
                 continue
-
-            # Setup progress-bar for file output #
-            progress = tqdm(range(file_size), f'Sending {file.name}', unit='B',
-                            unit_scale=True, unit_divisor=BUFFER_SIZE)
 
             # Send start bytes for setup and progress bar on remote system #
             SEND_QUEUE.put(start_bytes)
@@ -142,12 +128,9 @@ class OutgoingFileDetector(FileSystemEventHandler):
                 for chunk in list(chunk_bytes(data, BUFFER_SIZE)):
                     # Put data in send queue and update progress bar #
                     SEND_QUEUE.put(chunk)
-                    # Put data in send queue and update progress bar #
-                    progress.update(len(chunk))
             # If the file data can be fit in one chunk #
             else:
                 SEND_QUEUE.put(data)
-                progress.update(len(data))
 
             # Put EOF descriptor for remote system to know transfer is complete #
             end_bytes = b'<END_FILE>'
@@ -172,7 +155,7 @@ def auto_file_outgoing():
 
     # Run file system monitor until Ctrl+C #
     try:
-        # Poll designed folder in file system for modifications (added files #
+        # Poll designed folder in file system for modifications (added files) #
         while True:
             time.sleep(5)
 
@@ -202,16 +185,14 @@ def display_output():
             # Get output message from output queue #
             output_msg = OUTPUT_QUEUE.get()
             # Display output via stdout #
-            print(output_msg)
+            logging.info(output_msg)
 
         # If the input queue has data #
         if not ERROR_QUEUE.empty():
             # Get error message from error queue #
             error_msg = ERROR_QUEUE.get()
-            # Format error message #
-            err_message = f'\n* [ERROR] {error_msg} *\n'
             # Display error message via stderr #
-            print(err_message, file=sys.stderr)
+            logging.error(error_msg)
 
 
 def client_init():
@@ -228,12 +209,12 @@ def client_init():
     # Initialize the TCP socket instance #
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    print(f'[+] Attempting to connect to {IP} on {PORT}')
+    print(f'[+] Attempting to connect to {TARGET_IP} on {PORT}')
 
     # While the connection attempt return code is not 0 (successful) #
     while True:
         # Attempt connection on remote port #
-        res = sock.connect_ex((IP, PORT))
+        res = sock.connect_ex((TARGET_IP, PORT))
         # If the connection attempt was not successful #
         if res != 0:
             print('\n[+] Connection failed .. sleeping 5 seconds and retrying')
@@ -243,7 +224,7 @@ def client_init():
 
         break
 
-    print(f'\n[!] Connection established to {IP}:{PORT}')
+    print(f'\n[!] Connection established to {TARGET_IP}:{PORT}')
 
     # Set socket to non-blocking #
     sock.setblocking(False)
@@ -317,7 +298,7 @@ def main():
     :return:  Nothing
     """
     # If the remote host is already listening for connections #
-    if port_check(IP, PORT):
+    if port_check(TARGET_IP, PORT):
         # Act as the client side of connection #
         conn = client_init()
     # If no remote listeners are active #
@@ -334,49 +315,87 @@ def main():
     # Start the file writer incoming data daemon thread #
     auto_file_writer.start()
 
-    OUTPUT_QUEUE.put('\n[!] File system monitoring activated')
-
     # Pass socket instance to list to get inputs/outputs #
-    inputs = [conn]
-    outputs = [conn]
+    inputs = outputs = [conn]
+    send_progress = recv_progress = None
 
     try:
         while True:
             # Polls socket inputs, outputs, and errors. Returns socket file descriptor lists tuple #
             read_data, send_data, conn_errs = select.select(inputs, outputs, inputs, 0.5)
 
-            # If the send queue has data to send #
-            if not SEND_QUEUE.empty():
-                # Iterate through available send sockets #
-                for sock in send_data:
+            # Iterate through available send sockets #
+            for sock in send_data:
+                # If the send queue has data to send #
+                if not SEND_QUEUE.empty():
                     # Get a chunk of data from send queue #
                     chunk = SEND_QUEUE.get()
 
                     OUTPUT_QUEUE.put(f'Data to be sent: {chunk.decode()}\n')
 
+                    # If chunk contain the file name and size #
+                    if BUFFER_DIV in chunk:
+                        # Parse the file name and size from the initial string with <$> divider #
+                        file_name, file_size = chunk.split(BUFFER_DIV)
+                        # Strip any extra path from file name #
+                        file_name = os.path.basename(file_name.decode())
+                        # Convert the file size to integer #
+                        file_size = int_convert(file_size.decode())
+                        # Setup progress-bar for file output #
+                        send_progress = tqdm(range(file_size), f'Sending {file_name}', unit='B',
+                                        unit_scale=True, unit_divisor=BUFFER_SIZE)
+
                     # Send the chunk of data through the TCP connection #
                     sock.sendall(chunk)
 
-                    # Remove chunk from outputs list #
-                    outputs.remove(sock)
+                    # If progress bar has not been initialized #
+                    if not send_progress:
+                        # Put error code error queue to be logged #
+                        ERROR_QUEUE.put('Send data progress bar not properly initialized')
+                        time.sleep(1)
+                        sys.exit(2)
+
+                    # Update the progress bar #
+                    send_progress.update(len(chunk))
+
+                # Remove chunk from outputs list #
+                outputs.remove(sock)
 
             # Iterate through available receive sockets #
             for sock in read_data:
                 # Receive 4096 bytes of data from remote host #
-                data = sock.recv(BUFFER_SIZE)
+                chunk = sock.recv(BUFFER_SIZE)
 
                 # If the socket received data #
-                if len(data) > 0:
-                    OUTPUT_QUEUE.put(f'Data received: {data.decode()}\n')
+                if len(chunk) > 0:
+                    OUTPUT_QUEUE.put(f'Data received: {chunk.decode()}\n')
+
+                    # If chunk contain the file name and size #
+                    if BUFFER_DIV in chunk:
+                        # Parse the file name and size from the initial string with <$> divider #
+                        file_name, file_size = chunk.split(BUFFER_DIV)
+                        # Strip any extra path from file name #
+                        file_name = os.path.basename(file_name.decode())
+                        # Convert the file size to integer #
+                        file_size = int_convert(file_size.decode())
+                        # Setup progress-bar for file input #
+                        recv_progress = tqdm(range(file_size), f'Receiving {file_name}', unit='B',
+                                             unit_scale=True, unit_divisor=BUFFER_SIZE)
 
                     # Put received data into read queue #
-                    READ_QUEUE.put(data)
+                    READ_QUEUE.put(chunk)
+
+                    # If progress bar has not been initialized #
+                    if not recv_progress:
+                        # Put error code error queue to be logged #
+                        ERROR_QUEUE.put('Receive data progress bar not properly initialized')
+                        time.sleep(1)
+                        sys.exit(3)
 
                 # Close the read socket #
                 sock.close()
                 # Remove socket from inputs list #
                 inputs.remove(sock)
-                break
 
             for sock in conn_errs:
                 # Put message in error queue to be displayed stderr #
@@ -388,12 +407,12 @@ def main():
 
     # If Ctrl + C is detected #
     except KeyboardInterrupt:
-        OUTPUT_QUEUE.put('\n[!] Ctrl + C detected .. exiting program')
+        print('\n[!] Ctrl + C detected .. exiting program')
 
     # If an error is raised because the
     # other end of the connection closed #
     except OSError:
-        OUTPUT_QUEUE.put('\n[!] Connection was closed on the other end .. exiting program')
+        print('\n[!] Connection was closed on the other end .. exiting program')
 
     # Close the connection #
     conn.close()
@@ -426,8 +445,7 @@ if __name__ == '__main__':
 
     # If unknown exception occurs #
     except Exception as err:
-        # Print and log unknown exception #
-        ERROR_QUEUE.put(f'Unknown exception occurred: {err}')
+        # Log error and set error exit code #
         logging.exception('Unknown exception occurred: %s\n\n', err)
         RET = 1
 
