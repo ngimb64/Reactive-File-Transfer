@@ -145,5 +145,5 @@ def secure_delete(path, passes=10):
             continue
 
     # Unlink (delete) file from file system #
-    os.remove(str(path.resolve()))
+    os.remove(path)
     return err_msg

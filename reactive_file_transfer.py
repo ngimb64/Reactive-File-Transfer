@@ -410,8 +410,6 @@ def main():
                     # # Update the progress bar #
                     # recv_progress.update(len(chunk))
 
-                # Close the read socket #
-                sock.close()
                 # Remove socket from inputs list #
                 inputs.remove(sock)
 
