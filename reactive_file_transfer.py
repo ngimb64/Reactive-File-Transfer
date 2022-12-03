@@ -13,7 +13,7 @@ from tqdm import tqdm
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 # Custom modules #
-from Modules.utils import chunk_bytes, error_query, int_convert, port_check
+from Modules.utils import chunk_bytes, error_query, parse_start_bytes, port_check, secure_delete
 
 
 # Global variables #
@@ -42,20 +42,15 @@ def auto_file_incoming():
 
         # Get the initial string with the file name and size #
         title_chunk = READ_QUEUE.get()
-
-        # Parse the file name and size from the initial string with <$> divider #
-        file_name, file_size = title_chunk.split(BUFFER_DIV)
-        # Strip any extra path from file name #
-        file_name = os.path.basename(file_name.decode())
-        # Convert the file size to integer #
-        file_size = int_convert(file_size.decode())
+        # Parse the file name and size from the received start bytes #
+        file_name, file_size = parse_start_bytes(title_chunk, BUFFER_DIV)
 
         # If the file conversion function returns string indicating error #
         if isinstance(file_size, str):
-            # Put the returned error in error queue for print thread #
+            # Put the returned error in error queue for logging thread #
             ERROR_QUEUE.put(file_size)
             time.sleep(1)
-            sys.exit(4)
+            sys.exit(6)
 
         # Format the incoming file path #
         file_path = in_path / file_name
@@ -82,8 +77,9 @@ def auto_file_incoming():
 
         # If error occurs during file operation #
         except (IOError, OSError) as file_err:
-            # Lookup the file error and put in error queue for print thread #
-            error_query(file_path, 'ab', file_err)
+            # Lookup the file error and put in error queue for logging thread #
+            err_msg = error_query(file_path, 'ab', file_err)
+            ERROR_QUEUE.put(err_msg)
 
 class OutgoingFileDetector(FileSystemEventHandler):
     """
@@ -115,8 +111,9 @@ class OutgoingFileDetector(FileSystemEventHandler):
 
             # If error occurs during file operation #
             except (IOError, OSError) as file_err:
-                # Lookup the file error and put in error queue for print thread #
-                error_query(file_path, 'rb', file_err)
+                # Lookup the file error and put in error queue for logging thread #
+                err_msg = error_query(file_path, 'rb', file_err)
+                ERROR_QUEUE.put(err_msg)
                 continue
 
             # Send start bytes for setup and progress bar on remote system #
@@ -135,6 +132,14 @@ class OutgoingFileDetector(FileSystemEventHandler):
             # Put EOF descriptor for remote system to know transfer is complete #
             end_bytes = b'<END_FILE>'
             SEND_QUEUE.put(end_bytes)
+
+            # Delete the file from outgoing folder and overwrite
+            # numerous passes of random data #
+            ret = secure_delete(file_path)
+            # If error message was returned from secure delete #
+            if ret:
+                # Put in the error queue to be logged #
+                ERROR_QUEUE.put(ret)
 
 
 def auto_file_outgoing():
@@ -168,9 +173,9 @@ def auto_file_outgoing():
     observer.join()
 
 
-def display_output():
+def logger():
     """
-    Print thread polls output and error queue to get output to display via stdout or stderr.
+    Logging thread polls output and error queue to log info or error.
 
     :return:  Nothing, runs as background daemon thread until main thread exits.
     """
@@ -316,8 +321,10 @@ def main():
     auto_file_writer.start()
 
     # Pass socket instance to list to get inputs/outputs #
-    inputs = outputs = [conn]
-    send_progress = recv_progress = None
+    inputs = [conn]
+    outputs = [conn]
+    # send_progress = None
+    # recv_progress = None
 
     try:
         while True:
@@ -335,28 +342,32 @@ def main():
 
                     # If chunk contain the file name and size #
                     if BUFFER_DIV in chunk:
-                        # Parse the file name and size from the initial string with <$> divider #
-                        file_name, file_size = chunk.split(BUFFER_DIV)
-                        # Strip any extra path from file name #
-                        file_name = os.path.basename(file_name.decode())
-                        # Convert the file size to integer #
-                        file_size = int_convert(file_size.decode())
-                        # Setup progress-bar for file output #
-                        send_progress = tqdm(range(file_size), f'Sending {file_name}', unit='B',
-                                        unit_scale=True, unit_divisor=BUFFER_SIZE)
+                        # Parse the file name and size from the sent start bytes #
+                        file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
+
+                        # If the file conversion function returns string indicating error #
+                        if isinstance(file_size, str):
+                            # Put the returned error in error queue for logging thread #
+                            ERROR_QUEUE.put(file_size)
+                            time.sleep(1)
+                            sys.exit(2)
+
+                        # # Setup progress-bar for file output #
+                        # send_progress = tqdm(range(file_size), f'Sending {file_name}', unit='B',
+                        #                 unit_scale=True, unit_divisor=BUFFER_SIZE)
 
                     # Send the chunk of data through the TCP connection #
                     sock.sendall(chunk)
 
-                    # If progress bar has not been initialized #
-                    if not send_progress:
-                        # Put error code error queue to be logged #
-                        ERROR_QUEUE.put('Send data progress bar not properly initialized')
-                        time.sleep(1)
-                        sys.exit(2)
+                    # # If progress bar has not been initialized #
+                    # if not send_progress:
+                    #     # Put error code error queue to be logged #
+                    #     ERROR_QUEUE.put('Send data progress bar not properly initialized')
+                    #     time.sleep(1)
+                    #     sys.exit(3)
 
-                    # Update the progress bar #
-                    send_progress.update(len(chunk))
+                    # # Update the progress bar #
+                    # send_progress.update(len(chunk))
 
                 # Remove chunk from outputs list #
                 outputs.remove(sock)
@@ -372,25 +383,32 @@ def main():
 
                     # If chunk contain the file name and size #
                     if BUFFER_DIV in chunk:
-                        # Parse the file name and size from the initial string with <$> divider #
-                        file_name, file_size = chunk.split(BUFFER_DIV)
-                        # Strip any extra path from file name #
-                        file_name = os.path.basename(file_name.decode())
-                        # Convert the file size to integer #
-                        file_size = int_convert(file_size.decode())
-                        # Setup progress-bar for file input #
-                        recv_progress = tqdm(range(file_size), f'Receiving {file_name}', unit='B',
-                                             unit_scale=True, unit_divisor=BUFFER_SIZE)
+                        # Parse the file name and size from the received start bytes #
+                        file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
+
+                        # If the file conversion function returns string indicating error #
+                        if isinstance(file_size, str):
+                            # Put the returned error in error queue for logging thread #
+                            ERROR_QUEUE.put(file_size)
+                            time.sleep(1)
+                            sys.exit(4)
+
+                        # # Setup progress-bar for file input #
+                        # recv_progress = tqdm(range(file_size), f'Receiving {file_name}', unit='B',
+                        #                      unit_scale=True, unit_divisor=BUFFER_SIZE)
 
                     # Put received data into read queue #
                     READ_QUEUE.put(chunk)
 
-                    # If progress bar has not been initialized #
-                    if not recv_progress:
-                        # Put error code error queue to be logged #
-                        ERROR_QUEUE.put('Receive data progress bar not properly initialized')
-                        time.sleep(1)
-                        sys.exit(3)
+                    # # If progress bar has not been initialized #
+                    # if not recv_progress:
+                    #     # Put error code error queue to be logged #
+                    #     ERROR_QUEUE.put('Receive data progress bar not properly initialized')
+                    #     time.sleep(1)
+                    #     sys.exit(5)
+
+                    # # Update the progress bar #
+                    # recv_progress.update(len(chunk))
 
                 # Close the read socket #
                 sock.close()
@@ -434,7 +452,7 @@ if __name__ == '__main__':
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
     # Initialize the output display thread #
-    output_thread = Thread(target=display_output, daemon=True, args=())
+    output_thread = Thread(target=logger, daemon=True, args=())
     # Start the program output daemon thread #
     output_thread.start()
     # Exit code #
