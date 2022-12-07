@@ -3,9 +3,10 @@ import errno
 import os
 import socket
 import time
+import typing
 
 
-def chunk_bytes(bytes_string: bytes, length: int):
+def chunk_bytes(bytes_string: bytes, length: int) -> typing.Generator:
     """
     Generator to split the bytes string passed in by the chunk length passed in it should be split
     into.
@@ -89,7 +90,7 @@ def port_check(ip_addr: str, port: int) -> bool:
     :return:  The True/False boolean value depending on operation success/failure.
     """
     # Set socket connection timeout #
-    socket.setdefaulttimeout(0.5)
+    socket.setdefaulttimeout(1)
     # Create test TCP socket #
     test_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Attempt connection on remote port with test socket #

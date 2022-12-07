@@ -48,7 +48,7 @@ def auto_file_incoming():
         # If the file conversion function returns string indicating error #
         if isinstance(file_size, str):
             # Put the returned error in error queue for logging thread #
-            ERROR_QUEUE.put(file_size)
+            ERROR_QUEUE.put(f'Error occurred converting string number "{file_size}" to integer')
             time.sleep(1)
             sys.exit(6)
 
@@ -287,7 +287,7 @@ def server_init():
     # Set the socket to non-blocking #
     client_sock.setblocking(False)
     # Notify user of successful connection #
-    print(f'\n[!] Connection established to {address}:{PORT}')
+    print(f'\n[!] Connection established to {address[0]}:{PORT}')
 
     return client_sock
 
@@ -330,7 +330,7 @@ def main():
     try:
         while True:
             # Polls socket inputs, outputs, and errors. Returns socket file descriptor lists tuple #
-            read_data, send_data, conn_errs = select.select(inputs, outputs, inputs, 0.5)
+            read_data, send_data, conn_errs = select.select(inputs, outputs, inputs)
 
             # If the send queue has data to send #
             if not SEND_QUEUE.empty():
@@ -453,9 +453,9 @@ if __name__ == '__main__':
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
     # Initialize the output display thread #
-    output_thread = Thread(target=logger, daemon=True, args=())
+    logger_thread = Thread(target=logger, daemon=True, args=())
     # Start the program output daemon thread #
-    output_thread.start()
+    logger_thread.start()
     # Exit code #
     RET = 0
 
