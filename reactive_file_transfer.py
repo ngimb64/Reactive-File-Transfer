@@ -81,6 +81,7 @@ def auto_file_incoming():
             err_msg = error_query(file_path, 'ab', file_err)
             ERROR_QUEUE.put(err_msg)
 
+
 class OutgoingFileDetector(FileSystemEventHandler):
     """
     Watchdog file system monitoring class that continuously monitors the outgoing data directory to
@@ -331,10 +332,10 @@ def main():
             # Polls socket inputs, outputs, and errors. Returns socket file descriptor lists tuple #
             read_data, send_data, conn_errs = select.select(inputs, outputs, inputs, 0.5)
 
-            # Iterate through available send sockets #
-            for sock in send_data:
-                # If the send queue has data to send #
-                if not SEND_QUEUE.empty():
+            # If the send queue has data to send #
+            if not SEND_QUEUE.empty():
+                # Iterate through available send sockets #
+                for sock in send_data:
                     # Get a chunk of data from send queue #
                     chunk = SEND_QUEUE.get()
 
@@ -369,8 +370,9 @@ def main():
                     # # Update the progress bar #
                     # send_progress.update(len(chunk))
 
-                # Remove chunk from outputs list #
-                outputs.remove(sock)
+                    # Remove chunk from outputs list #
+                    outputs.remove(sock)
+                    break
 
             # Iterate through available receive sockets #
             for sock in read_data:
@@ -412,6 +414,7 @@ def main():
 
                 # Remove socket from inputs list #
                 inputs.remove(sock)
+                break
 
             for sock in conn_errs:
                 # Put message in error queue to be displayed stderr #

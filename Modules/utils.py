@@ -104,6 +104,7 @@ def port_check(ip_addr: str, port: int) -> bool:
     # If connection operation was successful #
     return True
 
+
 def secure_delete(path, passes=10):
     """
     Overwrite file data with random data number of specified passes and overwrite with random data.
