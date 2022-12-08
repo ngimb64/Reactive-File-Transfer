@@ -370,10 +370,6 @@ def main():
                     # # Update the progress bar #
                     # send_progress.update(len(chunk))
 
-                    # Remove chunk from outputs list #
-                    outputs.remove(sock)
-                    break
-
             # Iterate through available receive sockets #
             for sock in read_data:
                 # Receive 4096 bytes of data from remote host #
@@ -412,17 +408,12 @@ def main():
                     # # Update the progress bar #
                     # recv_progress.update(len(chunk))
 
-                # Remove socket from inputs list #
-                inputs.remove(sock)
-                break
-
             for sock in conn_errs:
                 # Put message in error queue to be displayed stderr #
                 ERROR_QUEUE.put(f'Error occurred during socket operation: {sock}')
                 # Remove exception data in inputs in outputs list #
                 inputs.remove(sock)
                 outputs.remove(sock)
-                break
 
     # If Ctrl + C is detected #
     except KeyboardInterrupt:
