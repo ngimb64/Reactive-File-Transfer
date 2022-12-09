@@ -185,38 +185,17 @@ def secure_delete(path: pathlib.Path, passes=10):
                     # Write random data #
                     file.write(os.urandom(length))
 
-            # Reset count and seconds for delete attempt #
-            count, seconds = 0, 1
-            break
-
-        # If error occurs during file operation #
-        except (IOError, OSError) as file_err:
-            # If attempts maxed #
-            if count == 3:
-                # Log error and break out of loop to attempt to delete file #
-                logging.error('Three consecutive errors occurred during file secure_delete() file '
-                              'operation on %s: %s\n\n', str(path), file_err)
-                break
-
-            # Increase count, sleep, and increase sleep interval by 1 #
-            count += 1
-            time.sleep(seconds)
-            seconds += 1
-            continue
-
-    while True:
-        try:
             # Unlink (delete) file from file system #
             os.remove(path)
             break
 
-        # If system error occurs deleting file #
-        except OSError as os_err:
+        # If error occurs during file operation #
+        except (IOError, OSError) as delete_err:
             # If attempts maxed #
             if count == 3:
-                # Log error and exit program #
-                logging.error('Three consecutive error occurred during os.remove() call in '
-                              'secure_delete(): %s\n\n', os_err)
+                # Log error and break out of loop to attempt to delete file #
+                logging.error('Three consecutive errors occurred during file secure_delete() %s:'
+                              ' %s\n\n', str(path), delete_err)
                 sys.exit(5)
 
             # Increase count, sleep, and increase sleep interval by 1 #

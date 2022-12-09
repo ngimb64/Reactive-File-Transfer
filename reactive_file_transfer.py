@@ -33,11 +33,6 @@ def auto_file_incoming():
     :return:  Nothing, runs as background daemon thread until main thread exits.
     """
     while True:
-        # If the read queue is empty #
-        if READ_QUEUE.empty():
-            # Re-iterate loop to temporarily block operation #
-            continue
-
         # Get the initial string with the file name and size #
         title_chunk = READ_QUEUE.get()
 
@@ -53,11 +48,6 @@ def auto_file_incoming():
             # Open the incoming file name in append bytes mode #
             with file_path.open('ab') as in_file:
                 while True:
-                    # If the read queue waiting for file data #
-                    if READ_QUEUE.empty():
-                        # Re-iterate loop to temporarily block operation #
-                        continue
-
                     # Get the incoming data from the read queue #
                     incoming_data = READ_QUEUE.get()
 
