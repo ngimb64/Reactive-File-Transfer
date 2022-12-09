@@ -3,28 +3,26 @@ import logging
 import os
 import queue
 import select
-import socket
 import sys
 import time
 from pathlib import Path
-from threading import Thread
+from threading import Thread, Lock
 # External modules #
-from tqdm import tqdm
-from watchdog.observers import Observer
+from rich.progress import Progress
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 # Custom modules #
-from Modules.utils import chunk_bytes, error_query, parse_start_bytes, port_check, secure_delete
+from Modules.utils import chunk_bytes, client_init, error_query, parse_start_bytes, port_check, \
+                          print_err, secure_delete, server_init, validate_ip, validate_port
 
 
 # Global variables #
-TARGET_IP = '<Add_IP>'
-PORT = 5001
 BUFFER_SIZE = 4096
 BUFFER_DIV = b'<$>'
-OUTPUT_QUEUE = queue.Queue()
-ERROR_QUEUE = queue.Queue()
 SEND_QUEUE = queue.Queue()
 READ_QUEUE = queue.Queue()
+PARSE_MUTEX = Lock()
+ERR_MUTEX = Lock()
 
 
 def auto_file_incoming():
@@ -42,15 +40,11 @@ def auto_file_incoming():
 
         # Get the initial string with the file name and size #
         title_chunk = READ_QUEUE.get()
-        # Parse the file name and size from the received start bytes #
-        file_name, file_size = parse_start_bytes(title_chunk, BUFFER_DIV)
 
-        # If the file conversion function returns string indicating error #
-        if isinstance(file_size, str):
-            # Put the returned error in error queue for logging thread #
-            ERROR_QUEUE.put(f'Error occurred converting string number "{file_size}" to integer')
-            time.sleep(1)
-            sys.exit(6)
+        # Obtain exclusive access to function with mutex lock #
+        with PARSE_MUTEX:
+            # Parse the file name and size from the received start bytes #
+            file_name, file_size = parse_start_bytes(title_chunk, BUFFER_DIV)
 
         # Format the incoming file path #
         file_path = in_path / file_name
@@ -77,9 +71,10 @@ def auto_file_incoming():
 
         # If error occurs during file operation #
         except (IOError, OSError) as file_err:
-            # Lookup the file error and put in error queue for logging thread #
-            err_msg = error_query(file_path, 'ab', file_err)
-            ERROR_QUEUE.put(err_msg)
+            # Obtain exclusive access to function with mutex lock #
+            with ERR_MUTEX:
+                # Lookup the file error and put in error queue for logging thread #
+                error_query(file_path, 'ab', file_err)
 
 
 class OutgoingFileDetector(FileSystemEventHandler):
@@ -101,7 +96,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
             # Format the outgoing file path name #
             file_path = out_path / file.name
             # Get the size of the file #
-            file_size = os.path.getsize(file_path)
+            file_size = file_path.stat().st_size
             # Format file name and size with divider as start bytes #
             start_bytes = f'{file.name}{BUFFER_DIV.decode()}{file_size}'.encode()
 
@@ -112,10 +107,11 @@ class OutgoingFileDetector(FileSystemEventHandler):
 
             # If error occurs during file operation #
             except (IOError, OSError) as file_err:
-                # Lookup the file error and put in error queue for logging thread #
-                err_msg = error_query(file_path, 'rb', file_err)
-                ERROR_QUEUE.put(err_msg)
-                continue
+                # Obtain exclusive access to function with mutex lock #
+                with ERR_MUTEX:
+                    # Lookup the file error and put in error queue for logging thread #
+                    error_query(file_path, 'rb', file_err)
+                    continue
 
             # Send start bytes for setup and progress bar on remote system #
             SEND_QUEUE.put(start_bytes)
@@ -136,11 +132,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
 
             # Delete the file from outgoing folder and overwrite
             # numerous passes of random data #
-            ret = secure_delete(file_path)
-            # If error message was returned from secure delete #
-            if ret:
-                # Put in the error queue to be logged #
-                ERROR_QUEUE.put(ret)
+            secure_delete(file_path)
 
 
 def auto_file_outgoing():
@@ -174,124 +166,6 @@ def auto_file_outgoing():
     observer.join()
 
 
-def logger():
-    """
-    Logging thread polls output and error queue to log info or error.
-
-    :return:  Nothing, runs as background daemon thread until main thread exits.
-    """
-    while True:
-        # If the output and error queues are empty #
-        if OUTPUT_QUEUE.empty() and ERROR_QUEUE.empty():
-            # Re-iterate to temporarily block operation #
-            continue
-
-        # If the output queue has data #
-        if not OUTPUT_QUEUE.empty():
-            # Get output message from output queue #
-            output_msg = OUTPUT_QUEUE.get()
-            # Display output via stdout #
-            logging.info(output_msg)
-
-        # If the input queue has data #
-        if not ERROR_QUEUE.empty():
-            # Get error message from error queue #
-            error_msg = ERROR_QUEUE.get()
-            # Display error message via stderr #
-            logging.error(error_msg)
-
-
-def client_init():
-    """
-    Function is called after test socket connection attempt is successful indicating a server is
-    already established on the other end. A final socket connection is re-setup and continually
-    attempted on five second intervals until successful, set to non-blocking, and returned to the
-    main thread.
-
-    :return:  The established client network socket instance.
-    """
-    # Set socket connection timeout #
-    socket.setdefaulttimeout(None)
-    # Initialize the TCP socket instance #
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    print(f'[+] Attempting to connect to {TARGET_IP} on {PORT}')
-
-    # While the connection attempt return code is not 0 (successful) #
-    while True:
-        # Attempt connection on remote port #
-        res = sock.connect_ex((TARGET_IP, PORT))
-        # If the connection attempt was not successful #
-        if res != 0:
-            print('\n[+] Connection failed .. sleeping 5 seconds and retrying')
-            # Sleep program for 5 seconds and re-iterate loop #
-            time.sleep(5)
-            continue
-
-        break
-
-    print(f'\n[!] Connection established to {TARGET_IP}:{PORT}')
-
-    # Set socket to non-blocking #
-    sock.setblocking(False)
-
-    return sock
-
-
-def server_init():
-    """
-    Function is called after test socket connection attempt is not successful indicating a server
-    is current not present on the other end. The hostname is queried, then used to get the IP
-    address; which is used to bind to the port set in the header of the file. The server then waits
-    for the incoming test connection, which when connected, null bytes are continually sent until an
-    error is raised to the client side timing out. The raised error is ignored and execution is
-    passed to wait for the final incoming connection. Once established, the client socket is set to
-    non-blocking and returned to the main thread.
-
-    :return:  The connected network socket client instance.
-    """
-    # Get the system hostname #
-    hostname = socket.gethostname()
-
-    # If the OS is not Windows #
-    if os.name != 'nt':
-        hostname = f'{hostname}.local'
-
-    # Use the hostname to get the IP Address #
-    ip_addr = socket.gethostbyname(hostname)
-    # Set socket connection timeout #
-    socket.setdefaulttimeout(None)
-    # Initialize the TCP socket instance #
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # Bind socket to server local IP and port #
-    sock.bind((ip_addr, PORT))
-    # Allow a single incoming socket connection #
-    sock.listen(1)
-    # Notify user host is acting as server #
-    print(f'[+] No remote server present .. serving on ({hostname}||{ip_addr}):{PORT}')
-    # Wait until test connection is received from client socket #
-    test_sock, _ = sock.accept()
-
-    try:
-        # Once test connection is active, continually send null bytes
-        # till an error is raised due to the connection closing #
-        while True:
-            test_sock.sendall(b'\x00')
-
-    # When error is raised because client side is closed #
-    except socket.error:
-        pass
-
-    # Wait to accept final connection #
-    client_sock, address = sock.accept()
-    # Set the socket to non-blocking #
-    client_sock.setblocking(False)
-    # Notify user of successful connection #
-    print(f'\n[!] Connection established to {address[0]}:{PORT}')
-
-    return client_sock
-
-
 def main():
     """
     Runs test network check to see if remote system is already established as a server. Depending on
@@ -303,14 +177,25 @@ def main():
 
     :return:  Nothing
     """
+    # If there are less than three arguments passed into program #
+    if len(sys.argv) < 3:
+        # Print usage error and exit #
+        print_err('Improper number of args passed into program .. Usage is: (python (Windows) ||'
+                  'python3 (Linux)) reactive_file_transfer.py <ip address> <port>')
+        sys.exit(2)
+
+    # Run the input parameters through validation functions #
+    target_ip_arg = validate_ip(sys.argv[1])
+    port_arg = validate_port(sys.argv[2])
+
     # If the remote host is already listening for connections #
-    if port_check(TARGET_IP, PORT):
+    if port_check(target_ip_arg, port_arg):
         # Act as the client side of connection #
-        conn = client_init()
+        conn = client_init(target_ip_arg, port_arg)
     # If no remote listeners are active #
     else:
         # Act as the server side of the connection #
-        conn = server_init()
+        conn = server_init(port_arg)
 
     # Initialize the automated file sender daemon thread instance #
     auto_file_reader = Thread(target=auto_file_outgoing, daemon=True, args=())
@@ -324,96 +209,86 @@ def main():
     # Pass socket instance to list to get inputs/outputs #
     inputs = [conn]
     outputs = [conn]
-    # send_progress = None
-    # recv_progress = None
+    send_progress = None
+    recv_progress = None
 
     try:
-        while True:
-            # Polls socket inputs, outputs, and errors. Returns socket file descriptor lists tuple #
-            read_data, send_data, conn_errs = select.select(inputs, outputs, inputs)
+        # Initialize the rich progress bar instance #
+        with Progress() as progress:
+            while True:
+                # Polls socket inputs, outputs, and errors. Returns socket file descriptor tuple #
+                read_data, send_data, conn_errs = select.select(inputs, outputs, inputs)
 
-            # If the send queue has data to send #
-            if not SEND_QUEUE.empty():
-                # Iterate through available send sockets #
-                for sock in send_data:
-                    # Get a chunk of data from send queue #
-                    chunk = SEND_QUEUE.get()
+                # If the send queue has data to send #
+                if not SEND_QUEUE.empty():
+                    # Iterate through available send sockets #
+                    for sock in send_data:
+                        # Get a chunk of data from send queue #
+                        chunk = SEND_QUEUE.get()
 
-                    OUTPUT_QUEUE.put(f'Data to be sent: {chunk.decode()}\n')
+                        logging.info('Data to be sent: %s\n\n', chunk.decode())
 
-                    # If chunk contain the file name and size #
-                    if BUFFER_DIV in chunk:
-                        # Parse the file name and size from the sent start bytes #
-                        file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
+                        # If chunk contain the file name and size #
+                        if BUFFER_DIV in chunk:
+                            # Obtain exclusive access to function with mutex lock #
+                            with PARSE_MUTEX:
+                                # Parse the file name and size from the sent start bytes #
+                                file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
 
-                        # If the file conversion function returns string indicating error #
-                        if isinstance(file_size, str):
-                            # Put the returned error in error queue for logging thread #
-                            ERROR_QUEUE.put(file_size)
-                            time.sleep(1)
-                            sys.exit(2)
+                            # Setup progress-bar for file output #
+                            send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
+                                                              total=(file_size + len(chunk)))
 
-                        # # Setup progress-bar for file output #
-                        # send_progress = tqdm(range(file_size), f'Sending {file_name}', unit='B',
-                        #                 unit_scale=True, unit_divisor=BUFFER_SIZE)
+                        # Send the chunk of data through the TCP connection #
+                        sock.sendall(chunk)
 
-                    # Send the chunk of data through the TCP connection #
-                    sock.sendall(chunk)
+                        # If progress bar has not been initialized #
+                        if not send_progress:
+                            # Put error code error queue to be logged #
+                            logging.error('Send data progress bar not properly initialized')
+                            sys.exit(6)
 
-                    # # If progress bar has not been initialized #
-                    # if not send_progress:
-                    #     # Put error code error queue to be logged #
-                    #     ERROR_QUEUE.put('Send data progress bar not properly initialized')
-                    #     time.sleep(1)
-                    #     sys.exit(3)
+                        # Update the progress bar #
+                        progress.update(send_progress, advance=len(chunk))
 
-                    # # Update the progress bar #
-                    # send_progress.update(len(chunk))
+                # Iterate through available receive sockets #
+                for sock in read_data:
+                    # Receive 4096 bytes of data from remote host #
+                    chunk = sock.recv(BUFFER_SIZE)
 
-            # Iterate through available receive sockets #
-            for sock in read_data:
-                # Receive 4096 bytes of data from remote host #
-                chunk = sock.recv(BUFFER_SIZE)
+                    # If the socket received data #
+                    if len(chunk) > 0:
+                        logging.info('Data received: %s\n\n', chunk.decode())
 
-                # If the socket received data #
-                if len(chunk) > 0:
-                    OUTPUT_QUEUE.put(f'Data received: {chunk.decode()}\n')
+                        # If chunk contain the file name and size #
+                        if BUFFER_DIV in chunk:
+                            # Obtain exclusive access to function with mutex lock #
+                            with PARSE_MUTEX:
+                                # Parse the file name and size from the received start bytes #
+                                file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
 
-                    # If chunk contain the file name and size #
-                    if BUFFER_DIV in chunk:
-                        # Parse the file name and size from the received start bytes #
-                        file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
+                            # Setup progress-bar for file input #
+                            recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
+                                                              total=(file_size + len(chunk)))
 
-                        # If the file conversion function returns string indicating error #
-                        if isinstance(file_size, str):
-                            # Put the returned error in error queue for logging thread #
-                            ERROR_QUEUE.put(file_size)
-                            time.sleep(1)
-                            sys.exit(4)
+                        # Put received data into read queue #
+                        READ_QUEUE.put(chunk)
 
-                        # # Setup progress-bar for file input #
-                        # recv_progress = tqdm(range(file_size), f'Receiving {file_name}', unit='B',
-                        #                      unit_scale=True, unit_divisor=BUFFER_SIZE)
+                        # If progress bar has not been initialized #
+                        if not recv_progress:
+                            # Put error code error queue to be logged #
+                            logging.error('Receive data progress bar not properly initialized')
+                            sys.exit(7)
 
-                    # Put received data into read queue #
-                    READ_QUEUE.put(chunk)
+                        # Update the progress bar #
+                        progress.update(recv_progress, advance=len(chunk))
 
-                    # # If progress bar has not been initialized #
-                    # if not recv_progress:
-                    #     # Put error code error queue to be logged #
-                    #     ERROR_QUEUE.put('Receive data progress bar not properly initialized')
-                    #     time.sleep(1)
-                    #     sys.exit(5)
-
-                    # # Update the progress bar #
-                    # recv_progress.update(len(chunk))
-
-            for sock in conn_errs:
-                # Put message in error queue to be displayed stderr #
-                ERROR_QUEUE.put(f'Error occurred during socket operation: {sock}')
-                # Remove exception data in inputs in outputs list #
-                inputs.remove(sock)
-                outputs.remove(sock)
+                for sock in conn_errs:
+                    # Put message in error queue to be displayed stderr #
+                    logging.error('Error occurred during socket operation: %s\n\n', sock)
+                    # Remove exception data in inputs in outputs list #
+                    inputs.remove(sock)
+                    outputs.remove(sock)
 
     # If Ctrl + C is detected #
     except KeyboardInterrupt:
@@ -440,13 +315,10 @@ if __name__ == '__main__':
     out_path = path / folders[1]
 
     # Initialize the logging facilities #
-    logging.basicConfig(level=logging.DEBUG, filename=str(log_name.resolve()))
+    logging.basicConfig(level=logging.DEBUG, filename=str(log_name.resolve()),
+                        format='%(asctime)s-%(lineno)d:%(funcName)s [%(levelno)s]>> %(message)s')
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
-    # Initialize the output display thread #
-    logger_thread = Thread(target=logger, daemon=True, args=())
-    # Start the program output daemon thread #
-    logger_thread.start()
     # Exit code #
     RET = 0
 
