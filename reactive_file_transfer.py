@@ -39,14 +39,14 @@ def auto_file_incoming():
         # Obtain exclusive access to function with mutex lock #
         with PARSE_MUTEX:
             # Parse the file name and size from the received start bytes #
-            file_name, file_size = parse_start_bytes(title_chunk, BUFFER_DIV)
+            file_name, _ = parse_start_bytes(title_chunk.encode(), BUFFER_DIV)
 
         # Format the incoming file path #
         file_path = in_path / file_name
 
         try:
             # Open the incoming file name in append bytes mode #
-            with file_path.open('ab') as in_file:
+            with file_path.open('a') as in_file:
                 while True:
                     # Get the incoming data from the read queue #
                     incoming_data = READ_QUEUE.get()
@@ -63,8 +63,8 @@ def auto_file_incoming():
         except (IOError, OSError) as file_err:
             # Obtain exclusive access to function with mutex lock #
             with ERR_MUTEX:
-                # Lookup the file error and put in error queue for logging thread #
-                error_query(file_path, 'ab', file_err)
+                # Lookup the file error and log it #
+                error_query(str(file_path.resolve), 'a', file_err)
 
 
 class OutgoingFileDetector(FileSystemEventHandler):
@@ -99,17 +99,17 @@ class OutgoingFileDetector(FileSystemEventHandler):
             except (IOError, OSError) as file_err:
                 # Obtain exclusive access to function with mutex lock #
                 with ERR_MUTEX:
-                    # Lookup the file error and put in error queue for logging thread #
-                    error_query(file_path, 'rb', file_err)
+                    # Lookup the file error and log it #
+                    error_query(str(file_path.resolve()), 'rb', file_err)
                     continue
 
             # Send start bytes for setup and progress bar on remote system #
             SEND_QUEUE.put(start_bytes)
 
             # If the file has more than one chunk of data to read #
-            if len(data) > BUFFER_SIZE:
+            if len(data) > BUFFER_SIZE - 2:
                 # Iterate through read file data and split it into chunks 4096 bytes or fewer #
-                for chunk in list(chunk_bytes(data, BUFFER_SIZE)):
+                for chunk in list(chunk_bytes(data, BUFFER_SIZE - 2)):
                     # Put data in send queue and update progress bar #
                     SEND_QUEUE.put(chunk)
             # If the file data can be fit in one chunk #
@@ -145,7 +145,7 @@ def auto_file_outgoing():
     try:
         # Poll designed folder in file system for modifications (added files) #
         while True:
-            time.sleep(5)
+            time.sleep(10)
 
     # If Ctrl+C is detected #
     except KeyboardInterrupt:
@@ -230,13 +230,7 @@ def main():
                                                               total=(file_size + len(chunk)))
 
                         # Send the chunk of data through the TCP connection #
-                        sock.sendall(chunk)
-
-                        # If progress bar has not been initialized #
-                        if not send_progress:
-                            # Put error code error queue to be logged #
-                            logging.error('Send data progress bar not properly initialized')
-                            sys.exit(6)
+                        sock.sendall(chunk + b'\r\n')
 
                         # Update the progress bar #
                         progress.update(send_progress, advance=len(chunk))
@@ -250,28 +244,28 @@ def main():
                     if len(chunk) > 0:
                         logging.info('Data received: %s\n\n', chunk.decode())
 
-                        # If chunk contain the file name and size #
-                        if BUFFER_DIV in chunk:
-                            # Obtain exclusive access to function with mutex lock #
-                            with PARSE_MUTEX:
-                                # Parse the file name and size from the received start bytes #
-                                file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
+                        # Split up any combined chunks of data as list #
+                        parsed_inputs = chunk.decode().split('\r\n')
+                        # Filters out any empty strings in list #
+                        parsed_inputs = ' '.join(parsed_inputs).split()
 
-                            # Setup progress-bar for file input #
-                            recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
-                                                              total=(file_size + len(chunk)))
+                        # Iterate through parsed read bytes as string list #
+                        for item in parsed_inputs:
+                            # If chunk contain the file name and size #
+                            if BUFFER_DIV in item:
+                                # Obtain exclusive access to function with mutex lock #
+                                with PARSE_MUTEX:
+                                    # Parse the file name and size from the received start bytes #
+                                    file_name, file_size = parse_start_bytes(item.encode(),
+                                                                             BUFFER_DIV)
+                                # Setup progress-bar for file input #
+                                recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
+                                                                  total=(file_size + len(item)))
+                            # Put received data into read queue #
+                            READ_QUEUE.put(item)
 
-                        # Put received data into read queue #
-                        READ_QUEUE.put(chunk)
-
-                        # If progress bar has not been initialized #
-                        if not recv_progress:
-                            # Put error code error queue to be logged #
-                            logging.error('Receive data progress bar not properly initialized')
-                            sys.exit(7)
-
-                        # Update the progress bar #
-                        progress.update(recv_progress, advance=len(chunk))
+                            # Update the progress bar #
+                            progress.update(recv_progress, advance=len(item))
 
                 for sock in conn_errs:
                     # Put message in error queue to be displayed stderr #
@@ -306,7 +300,8 @@ if __name__ == '__main__':
 
     # Initialize the logging facilities #
     logging.basicConfig(level=logging.DEBUG, filename=str(log_name.resolve()),
-                        format='%(asctime)s-%(lineno)d:%(funcName)s [%(levelno)s]>> %(message)s')
+                        format='%(asctime)s Line%(lineno)d::%(funcName)s[%(levelname)s]>>'
+                               ' %(message)s')
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
     # Exit code #
