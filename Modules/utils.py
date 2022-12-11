@@ -102,7 +102,7 @@ def int_convert(str_int: str) -> int:
     # If value can not be converted to int (not string) #
     except ValueError as val_err:
         logging.error('Error converting file size to integer %s\n\n', val_err)
-        sys.exit(5)
+        sys.exit(6)
 
     return raw_int
 
@@ -196,7 +196,7 @@ def secure_delete(path: pathlib.Path, passes=10):
                 # Log error and break out of loop to attempt to delete file #
                 logging.error('Three consecutive errors occurred during file secure_delete() %s:'
                               ' %s\n\n', str(path), delete_err)
-                sys.exit(5)
+                sys.exit(7)
 
             # Increase count, sleep, and increase sleep interval by 1 #
             count += 1
