@@ -218,10 +218,16 @@ def server_init(port: int):
     :param port:  The TCP port which the network socket will be established.
     :return:  The connected network socket client instance.
     """
-    # Get the system hostname #
-    hostname = socket.gethostname()
 
-    # TODO: debug to figure what is going on when Linux side calls this function
+    # If the OS is Windows #
+    if os.name == 'nt':
+        # Get the system hostname #
+        hostname = socket.gethostname()
+    # If the OS is Linux #
+    else:
+        # TODO: switch out with code that runs ifconfig and uses attempts to use the local ip in the
+        #       same address class for port binding
+        hostname = socket.gethostname()
 
     # If the OS is not Windows #
     if os.name != 'nt':

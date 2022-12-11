@@ -52,7 +52,7 @@ def auto_file_incoming():
                     incoming_data = READ_QUEUE.get()
 
                     # If the incoming data specifies end of file (EOF) #
-                    if incoming_data == b'<END_FILE>':
+                    if incoming_data == '<END_FILE>':
                         # Exit the file write loop #
                         break
 
@@ -145,7 +145,7 @@ def auto_file_outgoing():
     try:
         # Poll designed folder in file system for modifications (added files) #
         while True:
-            time.sleep(10)
+            time.sleep(15)
 
     # If Ctrl+C is detected #
     except KeyboardInterrupt:
@@ -199,8 +199,6 @@ def main():
     # Pass socket instance to list to get inputs/outputs #
     inputs = [conn]
     outputs = [conn]
-    send_progress = None
-    recv_progress = None
 
     try:
         # Initialize the rich progress bar instance #
@@ -252,7 +250,7 @@ def main():
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
                             # If chunk contain the file name and size #
-                            if BUFFER_DIV in item:
+                            if BUFFER_DIV.decode() in item:
                                 # Obtain exclusive access to function with mutex lock #
                                 with PARSE_MUTEX:
                                     # Parse the file name and size from the received start bytes #
@@ -300,7 +298,7 @@ if __name__ == '__main__':
 
     # Initialize the logging facilities #
     logging.basicConfig(level=logging.DEBUG, filename=str(log_name.resolve()),
-                        format='%(asctime)s Line%(lineno)d::%(funcName)s[%(levelname)s]>>'
+                        format='%(asctime)s line%(lineno)d::%(funcName)s[%(levelname)s]>>'
                                ' %(message)s')
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
