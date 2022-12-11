@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from threading import Thread, Lock
 # External modules #
+from pyfiglet import Figlet, FigletError
 from rich.progress import Progress
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -178,6 +179,17 @@ def main():
     target_ip_arg = validate_ip(sys.argv[1])
     port_arg = validate_port(sys.argv[2])
 
+    try:
+        # Initialize the pyfiglet instance and render it #
+        banner = Figlet(font='slant', width=120)
+        print(banner.renderText('Reactive File Transfer'))
+
+    # If error occurs rendering the programs banner #
+    except FigletError as banner_err:
+        print_err('An error occurred rendering the RFT banner')
+        logging.exception('An error occurred rendering the RFT banner %s\n\n', banner_err)
+        sys.exit(5)
+
     # If the remote host is already listening for connections #
     if port_check(target_ip_arg, port_arg):
         # Act as the client side of connection #
@@ -223,7 +235,7 @@ def main():
 
                             # Setup progress-bar for file output #
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
-                                                              total=(file_size + len(chunk)))
+                                                              total=file_size + len(chunk))
 
                         # Send the chunk of data through the TCP connection #
                         sock.sendall(chunk + b'<EOL>')
@@ -254,7 +266,7 @@ def main():
                                                                              BUFFER_DIV)
                                 # Setup progress-bar for file input #
                                 recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
-                                                                  total=(file_size + len(item)))
+                                                                  total=(file_size + len(chunk)))
                             # Put received data into read queue #
                             READ_QUEUE.put(item)
 
