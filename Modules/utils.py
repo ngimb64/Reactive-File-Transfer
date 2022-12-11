@@ -53,7 +53,7 @@ def client_init(target_ip: str, port: int):
 
         break
 
-    print(f'\n[!] Connection established to {target_ip}:{port}')
+    print(f'[!] Connection established to {target_ip}:{port}\n')
 
     # Set socket to non-blocking #
     sock.setblocking(False)
@@ -263,7 +263,7 @@ def server_init(port: int):
     # Set the socket to non-blocking #
     client_sock.setblocking(False)
     # Notify user of successful connection #
-    print(f'\n[!] Connection established to {address[0]}:{port}')
+    print(f'[!] Connection established to {address[0]}:{port}\n')
 
     return client_sock
 
