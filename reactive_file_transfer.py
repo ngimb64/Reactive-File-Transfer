@@ -52,7 +52,7 @@ def auto_file_incoming():
                     incoming_data = READ_QUEUE.get()
 
                     # If the incoming data specifies end of file (EOF) #
-                    if incoming_data == '<END_FILE>':
+                    if incoming_data == '<EOF>':
                         # Exit the file write loop #
                         break
 
@@ -106,10 +106,10 @@ class OutgoingFileDetector(FileSystemEventHandler):
             # Send start bytes for setup and progress bar on remote system #
             SEND_QUEUE.put(start_bytes)
 
-            # If the file has more than one chunk of data to read #
-            if len(data) > BUFFER_SIZE - 2:
+            # If the file has more than one chunk of data to read (minus 5 bytes for EOL) #
+            if len(data) > BUFFER_SIZE - 5:
                 # Iterate through read file data and split it into chunks 4096 bytes or fewer #
-                for chunk in list(chunk_bytes(data, BUFFER_SIZE - 2)):
+                for chunk in list(chunk_bytes(data, BUFFER_SIZE - 5)):
                     # Put data in send queue and update progress bar #
                     SEND_QUEUE.put(chunk)
             # If the file data can be fit in one chunk #
@@ -117,7 +117,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
                 SEND_QUEUE.put(data)
 
             # Put EOF descriptor for remote system to know transfer is complete #
-            end_bytes = b'<END_FILE>'
+            end_bytes = b'<EOF>'
             SEND_QUEUE.put(end_bytes)
 
             # Delete the file from outgoing folder and overwrite
@@ -214,8 +214,6 @@ def main():
                         # Get a chunk of data from send queue #
                         chunk = SEND_QUEUE.get()
 
-                        logging.info('Data to be sent: %s\n\n', chunk.decode())
-
                         # If chunk contain the file name and size #
                         if BUFFER_DIV in chunk:
                             # Obtain exclusive access to function with mutex lock #
@@ -228,7 +226,7 @@ def main():
                                                               total=(file_size + len(chunk)))
 
                         # Send the chunk of data through the TCP connection #
-                        sock.sendall(chunk + b'\r\n')
+                        sock.sendall(chunk + b'<EOL>')
 
                         # Update the progress bar #
                         progress.update(send_progress, advance=len(chunk))
@@ -240,10 +238,8 @@ def main():
 
                     # If the socket received data #
                     if len(chunk) > 0:
-                        logging.info('Data received: %s\n\n', chunk.decode())
-
                         # Split up any combined chunks of data as list #
-                        parsed_inputs = chunk.decode().split('\r\n')
+                        parsed_inputs = chunk.decode().split('<EOL>')
                         # Filters out any empty strings in list #
                         parsed_inputs = ' '.join(parsed_inputs).split()
 
