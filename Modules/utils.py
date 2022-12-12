@@ -11,7 +11,7 @@ import typing
 from getpass import getpass
 # External modules #
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import InvalidHash, VerifyMismatchError
 from cryptography.exceptions import InvalidKey, InvalidTag
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
@@ -70,7 +70,7 @@ def client_init(target_ip: str, port: int) -> tuple:
     # Argon2 hash the users input password #
     hash_pass = argon_instance.hash(session_pass)
     # Send the hashed password to the server to be verified #
-    sock.sendall(hash_pass)
+    sock.sendall(hash_pass.encode())
 
     # Wait till data is received back from the server #
     data = sock.recv(1024)
@@ -82,17 +82,17 @@ def client_init(target_ip: str, port: int) -> tuple:
         sys.exit(6)
 
     # Split the three keys by divisor #
-    keys = data.decode().split('<$>')
+    keys = data.split(b'<$>')
     # Split keys in memory as bytes #
-    aesccm_key = keys[0].encode()
-    nonce = keys[1].encode()
-    fern_key = keys[2].encode()
+    aesccm_key = keys[0]
+    nonce = keys[1]
+    fern_key = keys[2]
 
     try:
         # Initialize the AESCCM algo instance #
         aesccm = AESCCM(aesccm_key)
         # Decrypt the encrypted symmetrical key with authenticated password #
-        symm_key = aesccm.decrypt(nonce, fern_key, session_pass)
+        symm_key = aesccm.decrypt(nonce, fern_key, session_pass.encode())
 
     # If error occurs during the AESCCM algo instance initialization or fernet key decryption #
     except (InvalidKey, InvalidTag, ValueError) as decrypt_err:
@@ -109,6 +109,9 @@ def client_init(target_ip: str, port: int) -> tuple:
     time.sleep(1)
     # Set socket to non-blocking #
     sock.setblocking(False)
+
+    print('[!] Password verified and keys have been sent .. data transmission through the network '
+          'is now permitted')
 
     return sock, symm_key
 
@@ -346,7 +349,7 @@ def server_init(port: int) -> tuple:
         argon_instance.verify(recv_hash, session_pass)
 
     # If the received password and locally generated do not match #
-    except VerifyMismatchError:
+    except (InvalidHash, VerifyMismatchError):
         # Send data indicating operation failed #
         client_sock.sendall(b'False')
         # Print error and exit #
@@ -364,7 +367,7 @@ def server_init(port: int) -> tuple:
         # Initialize the AESCCM algo instance #
         aesccm = AESCCM(aesccm_key)
         # Encrypt the symmetrical key with aessccm password encryption #
-        crypt_key = aesccm.encrypt(nonce, symm_key, session_pass)
+        crypt_key = aesccm.encrypt(nonce, symm_key, session_pass.encode())
 
     # If error occurs during symmetrical key encryption process #
     except (InvalidTag, ValueError) as encrypt_err:
@@ -377,7 +380,7 @@ def server_init(port: int) -> tuple:
         sys.exit(9)
 
     # Parse the encrypted symmetrical key and aessccm key & nonce for transit to client #
-    key_bytes = f'{aesccm_key.decode()}<$>{nonce.decode()}<$>{crypt_key.decode()}'.encode()
+    key_bytes = b''.join([aesccm_key, b'<$>', nonce, b'<$>', crypt_key])
     # Send the parsed bytes with keys to client #
     client_sock.sendall(key_bytes)
 

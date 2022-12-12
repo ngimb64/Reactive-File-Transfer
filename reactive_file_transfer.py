@@ -266,9 +266,9 @@ def main():
                     # If the socket received data #
                     if len(chunk) > 0:
                         # Split up any combined chunks of data as list #
-                        parsed_inputs = chunk.decode().split('<EOL>')
+                        parsed_inputs = chunk.split(b'<EOL>')
                         # Filters out any empty strings in list #
-                        parsed_inputs = ' '.join(parsed_inputs).split()
+                        parsed_inputs = b' '.join(parsed_inputs).split()
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
@@ -298,7 +298,7 @@ def main():
                             # Put received data into read queue #
                             READ_QUEUE.put(plain_item.decode())
                             # Update the progress bar #
-                            progress.update(recv_progress, advance=len(item))
+                            progress.update(recv_progress, advance=len(plain_item))
 
                 for sock in conn_errs:
                     print_err('Error occurred during socket operation')

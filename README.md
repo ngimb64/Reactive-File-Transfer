@@ -14,8 +14,8 @@ This program runs on Windows and Linux, written in Python version 3.10.6
 ## Purpose
 Reactive file transfer establishes an automated multi-directional encrypted file transfer service with password protection.
 By utilizing active file system monitoring, the program features designated directories that are synced across remote systems.
-Upon file system modification, by moving data into the designated Outgoing directory, it automatically transfers to the remote systems Incoming directory
-It features a combination of symmetrical encryption with HMAC integrity check that is protected through AESCCM authenticated encryption.
+When a file system modification is activated due to moving data in the designated Outgoing directory, it automatically transfers to the remote systems Incoming directory.
+RFT features a combination of symmetrical encryption with HMAC integrity check that is protected with AESCCM authenticated encryption during transmission.
 
 ## Installation
 - Run the setup.py script to build a virtual environment and install all external packages in the created venv.
@@ -25,9 +25,9 @@ It features a combination of symmetrical encryption with HMAC integrity check th
 >       &emsp;&emsp;- Linux:  `python3 setup.py venv`
 
 - Once virtual env is built traverse to the (Scripts-Windows or bin-Linux) directory in the environment folder just created.
-- For Windows in the Scripts directory, execute `activate` or `activate.bat` script to activate the virtual environment.
-- For Linux in the bin directory, execute `source activate` to activate the virtual environment.
-- If for some reason issues are experienced with the setup script, the alternative is to manually create an environment, activate it, then run pip install -r packages.txt in project root
+- For Windows, in the venv\Scripts directory, execute `activate` or `activate.bat` script to activate the virtual environment.
+- For Linux, in the venv/bin directory, execute `source activate` to activate the virtual environment.
+- If for some reason issues are experienced with the setup script, the alternative is to manually create an environment, activate it, then run pip install -r packages.txt in project root.
 
 ## How To Use
 - Ensure the prereqs are met (most later versions of 3 should work) and the installation steps have been followed
@@ -96,8 +96,8 @@ It features a combination of symmetrical encryption with HMAC integrity check th
 > 12 - Error occurred decrypting data chunk received by remote host (main)
 
 -- utils.py --
-> 3 - Error occurred validating input IP address arg<br>
-> 4 - Error occurred validating input port numer arg<br>
+> 3 - Error occurred validating input IP address arg (validate_ip)<br>
+> 4 - Error occurred validating input port numer arg (validate_port)<br>
 > 6 - Password authentication failed on remote server host (client_init)<br>
 > 7 - Error occurred during AESCCM algorithm initialization or session key decryption (client_init)<br>
 > 8 - Received client hash does not match established session password (server_init)<br>
