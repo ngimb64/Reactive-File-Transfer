@@ -1,4 +1,6 @@
+# pylint: disable=E0401,W0106
 """ Built-in modules """
+import binascii
 import logging
 import os
 import queue
@@ -8,6 +10,8 @@ import time
 from pathlib import Path
 from threading import Thread, Lock
 # External modules #
+from cryptography.exceptions import InvalidKey
+from cryptography.fernet import Fernet, InvalidToken
 from pyfiglet import Figlet, FigletError
 from rich.progress import Progress
 from watchdog.events import FileSystemEventHandler
@@ -193,11 +197,11 @@ def main():
     # If the remote host is already listening for connections #
     if port_check(target_ip_arg, port_arg):
         # Act as the client side of connection #
-        conn = client_init(target_ip_arg, port_arg)
+        conn, fern_key = client_init(target_ip_arg, port_arg)
     # If no remote listeners are active #
     else:
         # Act as the server side of the connection #
-        conn = server_init(port_arg)
+        conn, fern_key = server_init(port_arg)
 
     # Initialize the automated file sender daemon thread instance #
     auto_file_reader = Thread(target=auto_file_outgoing, daemon=True, args=())
@@ -236,10 +240,21 @@ def main():
                             # Setup progress-bar for file output #
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=file_size + len(chunk))
+                        try:
+                            # Encrypt chunk before sending #
+                            crypt_item = Fernet(fern_key).encrypt(chunk)
+
+                        # If error occurs during fernet encryption process #
+                        except (binascii.Error, InvalidKey, InvalidToken, TypeError,
+                                ValueError) as encrypt_err:
+                            # Print error, log, and exit #
+                            print_err('Error occurred encrypting data chunk for transit')
+                            logging.error('Error occurred encrypting data chunk for transit:'
+                                          ' %s\n\n', encrypt_err)
+                            sys.exit(11)
 
                         # Send the chunk of data through the TCP connection #
-                        sock.sendall(chunk + b'<EOL>')
-
+                        sock.sendall(crypt_item + b'<EOL>')
                         # Update the progress bar #
                         progress.update(send_progress, advance=len(chunk))
 
@@ -257,28 +272,42 @@ def main():
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
+                            try:
+                                # Decrypt each item in parsed_inputs per iteration #
+                                plain_item = Fernet(fern_key).decrypt(item)
+
+                            # If error occurs during fernet decryption process #
+                            except (binascii.Error, InvalidKey, InvalidToken,
+                                    TypeError, ValueError) as decrypt_err:
+                                # Print error, log, and exit #
+                                print_err('Error occurring the fernet decryption process of '
+                                          'incoming data')
+                                logging.error('Error occurring the fernet decryption process of '
+                                              'incoming data: %s\n\n', decrypt_err)
+                                sys.exit(12)
+
                             # If chunk contain the file name and size #
-                            if BUFFER_DIV.decode() in item:
+                            if BUFFER_DIV in plain_item:
                                 # Obtain exclusive access to function with mutex lock #
                                 with PARSE_MUTEX:
                                     # Parse the file name and size from the received start bytes #
-                                    file_name, file_size = parse_start_bytes(item.encode(),
-                                                                             BUFFER_DIV)
+                                    file_name, file_size = parse_start_bytes(plain_item, BUFFER_DIV)
                                 # Setup progress-bar for file input #
                                 recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
                                                                   total=(file_size + len(chunk)))
                             # Put received data into read queue #
-                            READ_QUEUE.put(item)
-
+                            READ_QUEUE.put(plain_item.decode())
                             # Update the progress bar #
                             progress.update(recv_progress, advance=len(item))
 
                 for sock in conn_errs:
+                    print_err('Error occurred during socket operation')
                     # Put message in error queue to be displayed stderr #
                     logging.error('Error occurred during socket operation: %s\n\n', sock)
                     # Remove exception data in inputs in outputs list #
                     inputs.remove(sock)
                     outputs.remove(sock)
+                    break
 
     # If Ctrl + C is detected #
     except KeyboardInterrupt:
@@ -305,9 +334,9 @@ if __name__ == '__main__':
     out_path = path / folders[1]
 
     # Initialize the logging facilities #
-    logging.basicConfig(level=logging.DEBUG, filename=str(log_name.resolve()),
+    logging.basicConfig(filename=str(log_name.resolve()),
                         format='%(asctime)s line%(lineno)d::%(funcName)s[%(levelname)s]>>'
-                               ' %(message)s')
+                        ' %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     # Create non-existing data transfer directories #
     [Path(folder).mkdir(exist_ok=True) for folder in folders]
     # Exit code #

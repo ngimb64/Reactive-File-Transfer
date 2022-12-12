@@ -1,3 +1,5 @@
+argon2-cffi==21.3.0
+cryptography==38.0.4
 pyfiglet==0.8.post1
 rich==12.6.0
 watchdog==2.2.0
