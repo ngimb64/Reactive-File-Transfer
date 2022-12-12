@@ -239,7 +239,7 @@ def main():
 
                             # Setup progress-bar for file output #
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
-                                                              total=file_size + len(chunk))
+                                                              total=(file_size + len(chunk)))
                         try:
                             # Encrypt chunk before sending #
                             crypt_item = Fernet(fern_key).encrypt(chunk)
@@ -292,13 +292,16 @@ def main():
                                 with PARSE_MUTEX:
                                     # Parse the file name and size from the received start bytes #
                                     file_name, file_size = parse_start_bytes(plain_item, BUFFER_DIV)
+
                                 # Setup progress-bar for file input #
                                 recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
-                                                                  total=(file_size + len(chunk)))
+                                                                  total=file_size)
+                                continue
+
                             # Put received data into read queue #
                             READ_QUEUE.put(plain_item.decode())
                             # Update the progress bar #
-                            progress.update(recv_progress, advance=len(plain_item))
+                            progress.update(recv_progress, advance=len(item))
 
                 for sock in conn_errs:
                     print_err('Error occurred during socket operation')

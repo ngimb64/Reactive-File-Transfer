@@ -63,7 +63,7 @@ def client_init(target_ip: str, port: int) -> tuple:
 
         break
 
-    print(f'[!] Connection established to {target_ip}:{port}\n')
+    print(f'[!] Connection established to {target_ip}:{port}')
 
     # Initialize hash verifying instance #
     argon_instance = PasswordHasher()
@@ -111,7 +111,7 @@ def client_init(target_ip: str, port: int) -> tuple:
     sock.setblocking(False)
 
     print('[!] Password verified and keys have been sent .. data transmission through the network '
-          'is now permitted')
+          'is now permitted\n')
 
     return sock, symm_key
 
@@ -396,7 +396,7 @@ def server_init(port: int) -> tuple:
     client_sock.setblocking(False)
 
     print('[!] Password verified and keys have been sent .. data transmission through the network '
-          'is now permitted')
+          'is now permitted\n')
 
     return client_sock, symm_key
 
