@@ -296,7 +296,6 @@ def main():
                                 # Setup progress-bar for file input #
                                 recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
                                                                   total=file_size)
-                                continue
 
                             # Put received data into read queue #
                             READ_QUEUE.put(plain_item.decode())
