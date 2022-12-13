@@ -56,11 +56,35 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 >                    After the network socket is established, background daemon threads are spawned to display program output, handle monitoring outing data directory, and handle writing incoming data. 
 >                    Finally, the main thread polls the network socket in a non-blocking manner; getting data from the send queue and sending it, and reading data from the socket and putting it in the read queue.
 
--- utils.py --
-> chunk_bytes &nbsp;-&nbsp; Generator to split the bytes string passed in by the chunk length passed in it should be split into.
+-- crypto_handlers.py --
+> aesccm_decrypt &nbsp;-&nbsp; Decrypts the symmetrical fernet key used for encrypting and decrypting transfer data.
 
+> aesccm_encrypt &nbsp;-&nbsp; Encrypts the symmetrical fernet key used for encrypting and decrypting transfer data.
+
+> fernet_decrypt &nbsp;-&nbsp; Utilizes the passed in fernet key to decrypt the passed in data in a error handled manner.
+
+> fernet_encrypt &nbsp;-&nbsp; Utilizes the passed in fernet key to encrypt the passed in data in a error handled manner.
+
+-- network_handlers.py --
 > client_init &nbsp;-&nbsp; Function is called after test socket connection attempt is successful indicating a server is already established on the other end.
->                           A final socket connection is re-setup and continually attempted on five second intervals until successful, set to non-blocking, and returned to the main thread.
+>                           After gathering session password from user, the final socket connection is re-setup and continually attempted on five second intervals until successful. 
+>                           Once connected, the input password is hashed and send to the remote system for authentication. 
+>                           If successfully authenticated, an encrypted symmetrical key is sent back and decrypted using the authenticated password to be returned to main.
+
+> port_check &nbsp;-&nbsp; Creates TCP socket and checks to see if remote port on specified IP address is active.
+
+> server_init &nbsp;-&nbsp; Function is called after test socket connection attempt is not successful indicating a server is current not present on the other end. 
+>                           After gathering the session password, the hostname is queried and used to get the IP address used to bind to the port. 
+>                           The server then waits for the incoming test connection, which when connected, null bytes are continually sent until an error is raised to the client side timing out. 
+>                           The raised error is ignored and execution is passed to wait for the final incoming connection. 
+>                           Once established, the server end waits for the clients hashed password to arrive and verifies it through hashing algorithm. 
+>                           If successful, a key set is generated and encrypted with the session password and sent back to the client. 
+>                           Finally, the server waits to receive a confirmation status message to ensure the key was received and decrypted.
+
+-- utils.py --
+> banner_display &nbsp;-&nbsp; Renders and displays the programs pyfiglet banner.
+
+> chunk_bytes &nbsp;-&nbsp; Generator to split the bytes string passed in by the chunk length passed in it should be split into.
 
 > error_query &nbsp;-&nbsp; Looks up the errno message to get description.
 
@@ -70,17 +94,11 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 
 > pass_input &nbsp;-&nbsp; Gathers user input for session password and second password input for verification.
 
-> port_check &nbsp;-&nbsp; Creates TCP socket and checks to see if remote port on specified IP address is active.
-
 > print_err &nbsp;-&nbsp; Displays error via stderr.
 
 > secure_delete &nbsp;-&nbsp; Overwrite file data with random data number of specified passes and overwrite with random data.
 
-> server_init &nbsp;-&nbsp; Function is called after test socket connection attempt is not successful indicating a server is current not present on the other end. 
->                           The hostname is queried, then used to get the IP address; which is used to bind to the port set in the header of the file. 
->                           The server then waits for the incoming test connection, which when connected, null bytes are continually sent until an error is raised to the client side timing out. 
->                           The raised error is ignored and execution is passed to wait for the final incoming connection. 
->                           Once established, the client socket is set to non-blocking and returned to the main thread.
+> split_handler &nbsp;-&nbsp; Takes the passed in data and splits it based on specified divisor in error handled procedure.
 
 > validate_ip &nbsp;-&nbsp; Checks the input target IP arg against regex validation.
 
@@ -91,17 +109,22 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 > 0 - Successful operation (__main__)<br>
 > 1 - Unknown exception occurred (__main__)<br>
 > 2 - Improper number of args were passed in on execution (main)<br> 
-> 5 - Error occurred rendering pyfiglet program banner (main)<br>
-> 11 - Error occurred encrypting data chunk to be sent to remote host (main)<br>
-> 12 - Error occurred decrypting data chunk received by remote host (main)
+
+-- crypto_handlers.py --
+> 8 - Error occurred during AESCCM algorithm initialization or session key decryption (aesccm_decrypt)<br>
+> 10 - Error occurred encrypting sessions symmetrical cryptographic key (aesccm_encrypt)<br>
+> 12 - Error occurred encrypting data chunk to be sent to remote host (fernet_encrypt)<br>
+> 13 - Error occurred decrypting data chunk received by remote host (fernet_decrypt)<br>
+
+-- network_handlers.py --
+> 6 - Password authentication failed on remote server host (client_init)<br>
+> 9 - Received client hash does not match established session password (server_init)<br>
+> 11 - If error occurred on the client side parsing and decrypting session symmetrical key (server_init)<br>
 
 -- utils.py --
 > 3 - Error occurred validating input IP address arg (validate_ip)<br>
 > 4 - Error occurred validating input port numer arg (validate_port)<br>
-> 6 - Password authentication failed on remote server host (client_init)<br>
-> 7 - Error occurred during AESCCM algorithm initialization or session key decryption (client_init)<br>
-> 8 - Received client hash does not match established session password (server_init)<br>
-> 9 - Error occurred encrypting sessions symmetrical cryptographic key (server_init)<br>
-> 10 - If error occurred on the client side parsing and decrypting session symmetrical key (server_init)<br>
-> 13 - Error occurred converting string number to integer (int_convert)<br>
-> 14 - If three consecutive errors occur overwriting and deleting file data (secure_delete)
+> 5 - Error occurred rendering pyfiglet program banner (banner_display)<br>
+> 7 - The retrieved key data lacks multiple values to split (split_handler)<br>
+> 14 - Error occurred converting string number to integer (int_convert)<br>
+> 15 - If three consecutive errors occur overwriting and deleting file data (secure_delete)<br>

@@ -1,6 +1,5 @@
 # pylint: disable=E0401,W0106
 """ Built-in modules """
-import binascii
 import logging
 import os
 import queue
@@ -10,15 +9,14 @@ import time
 from pathlib import Path
 from threading import Thread, Lock
 # External modules #
-from cryptography.exceptions import InvalidKey
-from cryptography.fernet import Fernet, InvalidToken
-from pyfiglet import Figlet, FigletError
 from rich.progress import Progress
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 # Custom modules #
-from Modules.utils import chunk_bytes, client_init, error_query, parse_start_bytes, port_check, \
-                          print_err, secure_delete, server_init, validate_ip, validate_port
+from Modules.crypto_handlers import fernet_decrypt, fernet_encrypt
+from Modules.network_handlers import client_init, port_check, server_init
+from Modules.utils import banner_display, chunk_bytes, error_query, parse_start_bytes, print_err, \
+                          secure_delete, validate_ip, validate_port
 
 
 # Global variables #
@@ -167,8 +165,9 @@ def main():
     the result, the system is established as client or server to avoid centralized server. After
     the network socket is established, background daemon threads are spawned to display program
     output, handle monitoring outing data directory, and handle writing incoming data. Finally, the
-    main thread polls the network socket in a non-blocking manner; getting data from the send queue
-    and sending it, and reading data from the socket and putting it in the read queue.
+    main thread polls the network socket in a non-blocking manner. It gets data from the send queue,
+    encrypts, and sends it. As well as, reading data from the socket, decrypting it, and putting it
+     in the read queue to be written on the remote system's disk.
 
     :return:  Nothing
     """
@@ -183,16 +182,8 @@ def main():
     target_ip_arg = validate_ip(sys.argv[1])
     port_arg = validate_port(sys.argv[2])
 
-    try:
-        # Initialize the pyfiglet instance and render it #
-        banner = Figlet(font='slant', width=120)
-        print(banner.renderText('Reactive File Transfer'))
-
-    # If error occurs rendering the programs banner #
-    except FigletError as banner_err:
-        print_err('An error occurred rendering the RFT banner')
-        logging.exception('An error occurred rendering the RFT banner %s\n\n', banner_err)
-        sys.exit(5)
+    # Display the programs banner #
+    banner_display()
 
     # If the remote host is already listening for connections #
     if port_check(target_ip_arg, port_arg):
@@ -240,18 +231,8 @@ def main():
                             # Setup progress-bar for file output #
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=(file_size + len(chunk)))
-                        try:
-                            # Encrypt chunk before sending #
-                            crypt_item = Fernet(fern_key).encrypt(chunk)
-
-                        # If error occurs during fernet encryption process #
-                        except (binascii.Error, InvalidKey, InvalidToken, TypeError,
-                                ValueError) as encrypt_err:
-                            # Print error, log, and exit #
-                            print_err('Error occurred encrypting data chunk for transit')
-                            logging.error('Error occurred encrypting data chunk for transit:'
-                                          ' %s\n\n', encrypt_err)
-                            sys.exit(11)
+                        # Encrypt the data chunk to be sent #
+                        crypt_item = fernet_encrypt(fern_key, chunk)
 
                         # Send the chunk of data through the TCP connection #
                         sock.sendall(crypt_item + b'<EOL>')
@@ -272,19 +253,8 @@ def main():
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
-                            try:
-                                # Decrypt each item in parsed_inputs per iteration #
-                                plain_item = Fernet(fern_key).decrypt(item)
-
-                            # If error occurs during fernet decryption process #
-                            except (binascii.Error, InvalidKey, InvalidToken,
-                                    TypeError, ValueError) as decrypt_err:
-                                # Print error, log, and exit #
-                                print_err('Error occurring the fernet decryption process of '
-                                          'incoming data')
-                                logging.error('Error occurring the fernet decryption process of '
-                                              'incoming data: %s\n\n', decrypt_err)
-                                sys.exit(12)
+                            # Decrypt each item in parsed_inputs per iteration #
+                            plain_item = fernet_decrypt(fern_key, item)
 
                             # If chunk contain the file name and size #
                             if BUFFER_DIV in plain_item:
