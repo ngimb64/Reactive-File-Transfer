@@ -1,3 +1,4 @@
+# pylint: disable=E0401
 """ Built-in modules """
 import errno
 import logging
@@ -184,7 +185,7 @@ def secure_delete(path: pathlib.Path, passes=10):
             continue
 
 
-def split_handler(in_data: bytes, connection: socket.socket) -> list[bytes]:
+def split_handler(in_data: bytes, connection: socket.socket) -> list:
     """
     Takes the passed in data and splits it based on specified divisor in error handled procedure.
 

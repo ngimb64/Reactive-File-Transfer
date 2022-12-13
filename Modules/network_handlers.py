@@ -1,3 +1,4 @@
+# pylint: disable=E0401
 """ Built-in modules """
 import logging
 import os
