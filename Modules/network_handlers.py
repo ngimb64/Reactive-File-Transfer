@@ -60,7 +60,7 @@ def client_init(target_ip: str, port: int) -> tuple:
     sock.sendall(hash_pass.encode())
 
     # Wait till data is received back from the server #
-    data = sock.recv(1024)
+    data = sock.recv(256)
     # If the returned data indicates authentication failure #
     if data == b'False':
         # Print error and exit #
@@ -209,6 +209,9 @@ def server_init(port: int) -> tuple:
 
     # Parse the encrypted symmetrical key and aessccm key & nonce for transit to client #
     key_bytes = b''.join([aesccm_key, b'<$>', nonce, b'<$>', crypt_key, b'<$>', crypt_nonce])
+
+    print(f'The length of all the appended keys: {len(key_bytes)}')
+
     # Send the parsed bytes with keys to client #
     client_sock.sendall(key_bytes)
 

@@ -185,14 +185,19 @@ def main():
     # Display the programs banner #
     banner_display()
 
-    # If the remote host is already listening for connections #
-    if port_check(target_ip_arg, port_arg):
-        # Act as the client side of connection #
-        conn, symm_algo = client_init(target_ip_arg, port_arg)
-    # If no remote listeners are active #
-    else:
-        # Act as the server side of the connection #
-        conn, symm_algo = server_init(port_arg)
+    try:
+        # If the remote host is already listening for connections #
+        if port_check(target_ip_arg, port_arg):
+            # Act as the client side of connection #
+            conn, symm_algo = client_init(target_ip_arg, port_arg)
+        # If no remote listeners are active #
+        else:
+            # Act as the server side of the connection #
+            conn, symm_algo = server_init(port_arg)
+
+    except KeyboardInterrupt:
+        print('\n[!] Ctrl + C detected .. exiting program')
+        sys.exit(0)
 
     # Initialize the automated file sender daemon thread instance #
     auto_file_reader = Thread(target=auto_file_outgoing, daemon=True, args=())
@@ -251,6 +256,8 @@ def main():
 
                     # If the socket received data #
                     if len(chunk) > 0:
+                        logging.info('Initial recv chunk of data: %s\n\n', chunk)
+
                         # Split up any combined chunks of data as list #
                         parsed_inputs = chunk.split(b'<EOL>')
                         # Filters out any empty strings in list #
