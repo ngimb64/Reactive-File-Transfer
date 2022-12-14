@@ -8,7 +8,6 @@ import re
 import socket
 import sys
 import time
-import typing
 from getpass import getpass
 # External modules #
 from pyfiglet import Figlet, FigletError
@@ -37,7 +36,8 @@ def base64_parse(b64_bytes: bytes) -> bytes:
     Ensure the received chunk of data has base64 "=" padding removed, to be recalculated to prevent
     decoding errors.
 
-    :param b64_bytes:  The base64 bytes string to check for "=" padding.
+    :param b64_bytes:  The base64 bytes string to check for "=" padding on end of string and
+                       removes it.
     :return:  The parsed base64 bytes string.
     """
     while True:

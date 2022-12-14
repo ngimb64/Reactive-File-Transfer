@@ -82,6 +82,8 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 -- utils.py --
 > banner_display &nbsp;-&nbsp; Renders and displays the programs pyfiglet banner.
 
+> base64_parse &nbsp;-&nbsp; Ensure the received chunk of data has base64 "=" padding removed, to be recalculated to prevent decoding errors.
+
 > cha_init &nbsp;-&nbsp; Initializes the ChaCh20 algorithm object. 
 
 > error_query &nbsp;-&nbsp; Looks up the errno message to get description.

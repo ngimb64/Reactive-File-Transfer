@@ -243,7 +243,7 @@ def main():
 
                         # Encrypt and encode the data chunk to be sent #
                         crypt_chunk = chacha_encrypt(symm_algo, chunk)
-                        encoded_chunk = base64.b64encode(crypt_chunk)
+                        encoded_chunk = base64.urlsafe_b64encode(crypt_chunk)
 
                         logging.info('Send data length after encryption: %s\n', len(crypt_chunk))
 
@@ -274,7 +274,8 @@ def main():
                             # Trim any base64 padding from received data #
                             item = base64_parse(item)
                             # Decode the base64 item #
-                            decoded_crypt = base64.b64decode(item + (b'=' * (4 - len(item) % 4)))
+                            decoded_crypt = base64.urlsafe_b64decode(item +
+                                                                     (b'=' * (4 - len(item) % 4)))
                             # Decrypt each item in parsed_inputs per iteration #
                             plain_item = chacha_decrypt(symm_algo, decoded_crypt)
 
