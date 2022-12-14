@@ -36,7 +36,7 @@ def aesccm_decrypt(aes_key: bytes, aes_nonce: bytes, fernet_key: bytes, sesh_pas
         connection.sendall(b'False')
         # Print error, log, and exit program #
         print_err('Error occurred decrypting the retrieved session symmetrical key')
-        logging.error('Error occurred decrypting the retrieved session symmetrical key: %s\n\n',
+        logging.error('Error occurred decrypting the retrieved session symmetrical key: %s\n',
                       decrypt_err)
         sys.exit(8)
 
@@ -67,7 +67,7 @@ def aesccm_encrypt(aes_key: bytes, aes_nonce: bytes, fernet_key: bytes, sesh_pas
         connection.sendall(b'False')
         # Print error, log, and exit #
         print_err('Error occurred during symmetrical key encryption process')
-        logging.error('Error occurred during symmetrical key encryption process: %s\n\n',
+        logging.error('Error occurred during symmetrical key encryption process: %s\n',
                       encrypt_err)
         sys.exit(10)
 
@@ -91,8 +91,7 @@ def chacha_decrypt(cha_algo: Cipher, data: bytes) -> bytes:
     except (binascii.Error, TypeError, ValueError) as decrypt_err:
         # Print error, log, and exit #
         print_err('Error occurring the decryption process of incoming data')
-        logging.error('Error occurring the decryption process of incoming data: '
-                      '%s\n\n', decrypt_err)
+        logging.error('Error occurring the decryption process of incoming data: %s\n', decrypt_err)
         sys.exit(13)
 
     return plain_data
@@ -115,7 +114,7 @@ def chacha_encrypt(cha_algo: Cipher, plain_data: bytes) -> bytes:
     except (binascii.Error, TypeError, ValueError) as encrypt_err:
         # Print error, log, and exit #
         print_err('Error occurred encrypting data chunk for transit')
-        logging.error('Error occurred encrypting data chunk for transit: %s\n\n', encrypt_err)
+        logging.error('Error occurred encrypting data chunk for transit: %s\n', encrypt_err)
         sys.exit(12)
 
     return crypt_item

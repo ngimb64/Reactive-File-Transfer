@@ -28,20 +28,8 @@ def banner_display():
     # If error occurs rendering the programs banner #
     except FigletError as banner_err:
         print_err('An error occurred rendering the RFT banner')
-        logging.exception('An error occurred rendering the RFT banner %s\n\n', banner_err)
+        logging.exception('An error occurred rendering the RFT banner %s\n', banner_err)
         sys.exit(5)
-
-
-def chunk_bytes(bytes_string: bytes, length: int) -> typing.Generator:
-    """
-    Generator to split the bytes string passed in by the chunk length passed in it should be split
-    into.
-
-    :param bytes_string:  The bytes string to be split into chunks specified by the length.
-    :param length:  How long each chunk of data should be.
-    :return:  The byte parsing generator.
-    """
-    return (bytes_string[0+i:length+i] for i in range(0, len(bytes_string), length))
 
 
 def error_query(err_path: str, err_mode: str, err_obj):
@@ -55,19 +43,19 @@ def error_query(err_path: str, err_mode: str, err_obj):
     """
     # If file does not exist #
     if err_obj.errno == errno.ENOENT:
-        logging.error('%s does not exist\n\n', err_path)
+        logging.error('%s does not exist\n', err_path)
 
     # If the file does not have read/write access #
     elif err_obj.errno == errno.EPERM:
-        logging.error('%s does not have permissions for %s file mode\n\n', err_path, err_mode)
+        logging.error('%s does not have permissions for %s file mode\n', err_path, err_mode)
 
     # File IO error occurred #
     elif err_obj.errno == errno.EIO:
-        logging.error('IO error occurred during %s mode on %s\n\n', err_mode, err_path)
+        logging.error('IO error occurred during %s mode on %s\n', err_mode, err_path)
 
     # If other unexpected file operation occurs #
     else:
-        logging.error('Unexpected file operation occurred accessing %s: %s\n\n', err_path,
+        logging.error('Unexpected file operation occurred accessing %s: %s\n', err_path,
                       err_obj.errno)
 
 
@@ -84,7 +72,7 @@ def int_convert(str_int: str) -> int:
 
     # If value can not be converted to int (not string) #
     except ValueError as val_err:
-        logging.error('Error converting file size to integer %s\n\n', val_err)
+        logging.error('Error converting file size to integer %s\n', val_err)
         sys.exit(14)
 
     return raw_int
@@ -175,7 +163,7 @@ def secure_delete(path: pathlib.Path, passes=10):
             if count == 3:
                 # Log error and break out of loop to attempt to delete file #
                 logging.error('Three consecutive errors occurred file data scrub operation at %s:'
-                              ' %s\n\n', str(path), delete_err)
+                              ' %s\n', str(path), delete_err)
                 sys.exit(15)
 
             # Increase count, sleep, and increase sleep interval by 1 #
@@ -203,7 +191,7 @@ def split_handler(in_data: bytes, connection: socket.socket) -> list:
         connection.sendall(b'False')
         # Print error, log, and exit #
         print_err('The retrieved key data lacks multiple values to split')
-        logging.error('The retrieved key data lacks multiple values to split: %s\n\n', val_err)
+        logging.error('The retrieved key data lacks multiple values to split: %s\n', val_err)
         sys.exit(7)
 
     return byte_list

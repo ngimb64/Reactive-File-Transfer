@@ -1,5 +1,6 @@
 # pylint: disable=E0401,W0106
 """ Built-in modules """
+import base64
 import logging
 import os
 import queue
@@ -15,7 +16,7 @@ from watchdog.observers import Observer
 # Custom modules #
 from Modules.crypto_handlers import chacha_decrypt, chacha_encrypt
 from Modules.network_handlers import client_init, port_check, server_init
-from Modules.utils import banner_display, chunk_bytes, error_query, parse_start_bytes, print_err, \
+from Modules.utils import banner_display, error_query, parse_start_bytes, print_err, \
                           secure_delete, validate_ip, validate_port
 
 
@@ -90,13 +91,29 @@ class OutgoingFileDetector(FileSystemEventHandler):
             file_path = out_path / file.name
             # Get the size of the file #
             file_size = file_path.stat().st_size
+            unread_data = file_size
             # Format file name and size with divider as start bytes #
             start_bytes = f'{file.name}{BUFFER_DIV.decode()}{file_size}'.encode()
+            # Send start bytes for setup and progress bar on remote system #
+            SEND_QUEUE.put(start_bytes)
 
             try:
                 # Open file in bytes read mode to put in send queue #
                 with file_path.open('rb') as send_file:
-                    data = send_file.read()
+                    # While there is data left in the file to be read #
+                    while unread_data > 0:
+                        # If amount of unread data will fit in one chunk #
+                        if len(unread_data) <= BUFFER_SIZE - 5:
+                            # Put last of the data in send queue #
+                            data = send_file.read(unread_data)
+                        # If amount of unread data exceeds size of data buffer #
+                        else:
+                            # Put max chunk in send queue #
+                            data = send_file.read(BUFFER_SIZE - 5)
+
+                        # Put read data chunk in send queue and subtract from read bytes #
+                        SEND_QUEUE.put(data)
+                        unread_data -= len(data)
 
             # If error occurs during file operation #
             except (IOError, OSError) as file_err:
@@ -106,23 +123,8 @@ class OutgoingFileDetector(FileSystemEventHandler):
                     error_query(str(file_path.resolve()), 'rb', file_err)
                     continue
 
-            # Send start bytes for setup and progress bar on remote system #
-            SEND_QUEUE.put(start_bytes)
-
-            # If the file has more than one chunk of data to read (minus 5 bytes for EOL) #
-            if len(data) > BUFFER_SIZE - 5:
-                # Iterate through read file data and split it into chunks 4096 bytes or fewer #
-                for chunk in list(chunk_bytes(data, BUFFER_SIZE - 5)):
-                    # Put data in send queue and update progress bar #
-                    SEND_QUEUE.put(chunk)
-            # If the file data can be fit in one chunk #
-            else:
-                SEND_QUEUE.put(data)
-
             # Put EOF descriptor for remote system to know transfer is complete #
-            end_bytes = b'<EOF>'
-            SEND_QUEUE.put(end_bytes)
-
+            SEND_QUEUE.put(b'<EOF>')
             # Delete the file from outgoing folder and overwrite
             # numerous passes of random data #
             secure_delete(file_path)
@@ -237,15 +239,16 @@ def main():
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=(file_size + len(chunk)))
 
-                        logging.info('Send data length before encryption: %s\n\n', len(chunk))
+                        logging.info('Send data length before encryption: %s\n', len(chunk))
 
-                        # Encrypt the data chunk to be sent #
+                        # Encrypt and encode the data chunk to be sent #
                         crypt_chunk = chacha_encrypt(symm_algo, chunk)
+                        encoded_chunk = base64.b64encode(crypt_chunk)
 
-                        logging.info('Send data length after encryption: %s\n\n', len(crypt_chunk))
+                        logging.info('Send data length after encryption: %s\n', len(crypt_chunk))
 
                         # Send the chunk of data through the TCP connection #
-                        sock.sendall(crypt_chunk + b'<EOL>')
+                        sock.sendall(encoded_chunk + b'<EOL>')
                         # Update the progress bar #
                         progress.update(send_progress, advance=len(chunk))
 
@@ -256,7 +259,7 @@ def main():
 
                     # If the socket received data #
                     if len(chunk) > 0:
-                        logging.info('Initial recv chunk of data: %s\n\n', chunk)
+                        logging.info('Initial recv chunk of data: %s\n', chunk)
 
                         # Split up any combined chunks of data as list #
                         parsed_inputs = chunk.split(b'<EOL>')
@@ -265,15 +268,16 @@ def main():
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
-                            logging.info('Recv data length before decryption: %s\n\n', len(item))
-                            logging.info('Recv data before decryption: %s\n\n', item)
+                            logging.info('Recv data length before decryption: %s\n', len(item))
+                            logging.info('Recv data before decryption: %s\n', item)
 
+                            # Decode the base64 item #
+                            decoded_crypt = base64.b64decode(item)
                             # Decrypt each item in parsed_inputs per iteration #
-                            plain_item = chacha_decrypt(symm_algo, item)
+                            plain_item = chacha_decrypt(symm_algo, decoded_crypt)
 
-                            logging.info('Recv data length after decryption: %s\n\n',
-                                         len(plain_item))
-                            logging.info('Recv data after decryption: %s\n\n', plain_item)
+                            logging.info('Recv data length after decryption: %s\n', len(plain_item))
+                            logging.info('Recv data after decryption: %s\n', plain_item)
 
                             # If chunk contain the file name and size #
                             if BUFFER_DIV in plain_item:
@@ -294,7 +298,7 @@ def main():
                 for sock in conn_errs:
                     print_err('Error occurred during socket operation')
                     # Put message in error queue to be displayed stderr #
-                    logging.error('Error occurred during socket operation: %s\n\n', sock)
+                    logging.error('Error occurred during socket operation: %s\n', sock)
                     # Remove exception data in inputs in outputs list #
                     inputs.remove(sock)
                     outputs.remove(sock)
@@ -339,7 +343,7 @@ if __name__ == '__main__':
     # If unknown exception occurs #
     except Exception as err:
         # Log error and set error exit code #
-        logging.exception('Unknown exception occurred: %s\n\n', err)
+        logging.exception('Unknown exception occurred: %s\n', err)
         RET = 1
 
     sys.exit(RET)

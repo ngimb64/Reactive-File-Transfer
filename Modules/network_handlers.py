@@ -209,9 +209,6 @@ def server_init(port: int) -> tuple:
 
     # Parse the encrypted symmetrical key and aessccm key & nonce for transit to client #
     key_bytes = b''.join([aesccm_key, b'<$>', nonce, b'<$>', crypt_key, b'<$>', crypt_nonce])
-
-    print(f'The length of all the appended keys: {len(key_bytes)}')
-
     # Send the parsed bytes with keys to client #
     client_sock.sendall(key_bytes)
 
@@ -221,7 +218,7 @@ def server_init(port: int) -> tuple:
     if data == b'False':
         # Print error, log, and exit #
         print_err('Error occurred parsing and decrypting the send symmetrical key')
-        logging.error('Error occurred parsing and decrypting the send symmetrical key\n\n')
+        logging.error('Error occurred parsing and decrypting the send symmetrical key\n')
         sys.exit(11)
 
     # Initialize ChaCha20 encryption algo #

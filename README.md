@@ -86,8 +86,6 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 
 > cha_init &nbsp;-&nbsp; Initializes the ChaCh20 algorithm object. 
 
-> chunk_bytes &nbsp;-&nbsp; Generator to split the bytes string passed in by the chunk length passed in it should be split into.
-
 > error_query &nbsp;-&nbsp; Looks up the errno message to get description.
 
 > int_convert &nbsp;-&nbsp; Convert the passed in size as string to int, handles errors accordingly.
