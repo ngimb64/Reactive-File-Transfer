@@ -8,10 +8,9 @@ import sys
 # External modules #
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHash, VerifyMismatchError
-from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 # Custom modules #
-from Modules.crypto_handlers import aesccm_decrypt, aesccm_encrypt
+from Modules.crypto_handlers import aesccm_decrypt, aesccm_encrypt, cha_init
 from Modules.utils import pass_input, print_err, split_handler
 
 
@@ -26,7 +25,7 @@ def client_init(target_ip: str, port: int) -> tuple:
 
     :param target_ip:  The target IP to connect to as string.
     :param port:  The TCP port which the network socket will be established.
-    :return:  The established client network socket instance and symmetrical cryptographic key.
+    :return:  The established client network socket instance and the ChaCha20 algo instance.
     """
     # Get the session password from the user #
     session_pass = pass_input()
@@ -74,9 +73,14 @@ def client_init(target_ip: str, port: int) -> tuple:
     # Split keys in memory as bytes #
     aesccm_key = keys[0]
     nonce = keys[1]
-    fern_key = keys[2]
-    # Decrypt the session key #
-    symm_key = aesccm_decrypt(aesccm_key, nonce, fern_key, session_pass, sock)
+    crypt_cha_key = keys[2]
+    crypt_cha_nonce = keys[3]
+
+    # Decrypt the session key and nonce #
+    cha_key = aesccm_decrypt(aesccm_key, nonce, crypt_cha_key, session_pass, sock)
+    cha_nonce = aesccm_decrypt(aesccm_key, nonce, crypt_cha_nonce, session_pass, sock)
+    # Initalize the ChaCha20 algo instance with session key and nonce #
+    cha_algo = cha_init(cha_key, cha_nonce)
 
     # Send operation success status to server upon completion #
     sock.sendall(b'True')
@@ -87,7 +91,7 @@ def client_init(target_ip: str, port: int) -> tuple:
     print('[!] Password verified and keys have been sent .. data transmission through the network '
           'is now permitted\n')
 
-    return sock, symm_key
+    return sock, cha_algo
 
 
 def port_check(ip_addr: str, port: int) -> bool:
@@ -129,22 +133,22 @@ def server_init(port: int) -> tuple:
     decrypted.
 
     :param port:  The TCP port which the network socket will be established.
-    :return:  The connected network socket client instance and symmetrical cryptographic key.
+    :return:  The connected network socket client instance and ChaCha20 algo instance.
     """
     # Get the session password from the user #
     session_pass = pass_input()
+    # Get the system hostname #
+    hostname = socket.gethostname()
 
     # If the OS is Windows #
     if os.name == 'nt':
-        # Get the system hostname #
-        hostname = socket.gethostname()
+        # Use the hostname to get the IP Address #
+        ip_addr = socket.gethostbyname(hostname)
     # If the OS is Linux #
     else:
-        # TODO: update with function that runs ifconfig and find IP based on address class
-        hostname = '0.0.0.0'
-
-    # Use the hostname to get the IP Address #
-    ip_addr = socket.gethostbyname(hostname)
+        # Open network for Linux for now due
+        # to gethostname() inconsistency #
+        ip_addr = '0.0.0.0'
 
     # Set socket connection timeout #
     socket.setdefaulttimeout(None)
@@ -192,31 +196,37 @@ def server_init(port: int) -> tuple:
                   'connection')
         sys.exit(9)
 
-    # Generate a symmetrical key for encrypting transit data #
-    symm_key = Fernet.generate_key()
     # Generate aesccm components for encrypting symmetrical key to send to client #
     aesccm_key = AESCCM.generate_key(bit_length=256)
     nonce = os.urandom(13)
-    # Encrypt the session password for transit #
-    crypt_key = aesccm_encrypt(aesccm_key, nonce, symm_key, session_pass, sock)
+    # Generate 256 bit ChaCha20 key and 128 bit nonce #
+    cha_key = os.urandom(32)
+    cha_nonce = os.urandom(16)
+
+    # Encrypt the session key and nonce for transit #
+    crypt_key = aesccm_encrypt(aesccm_key, nonce, cha_key, session_pass, sock)
+    crypt_nonce = aesccm_encrypt(aesccm_key, nonce, cha_nonce, session_pass, sock)
 
     # Parse the encrypted symmetrical key and aessccm key & nonce for transit to client #
-    key_bytes = b''.join([aesccm_key, b'<$>', nonce, b'<$>', crypt_key])
+    key_bytes = b''.join([aesccm_key, b'<$>', nonce, b'<$>', crypt_key, b'<$>', crypt_nonce])
     # Send the parsed bytes with keys to client #
     client_sock.sendall(key_bytes)
 
     # Wait for response to ensure key was decrypted #
     data = client_sock.recv(8)
+    # If received status indicates failure #
     if data == b'False':
         # Print error, log, and exit #
         print_err('Error occurred parsing and decrypting the send symmetrical key')
         logging.error('Error occurred parsing and decrypting the send symmetrical key\n\n')
         sys.exit(11)
 
+    # Initialize ChaCha20 encryption algo #
+    cha_algo = cha_init(cha_key, cha_nonce)
     # Set the socket to non-blocking #
     client_sock.setblocking(False)
 
     print('[!] Password verified and keys have been sent .. data transmission through the network '
           'is now permitted\n')
 
-    return client_sock, symm_key
+    return client_sock, cha_algo

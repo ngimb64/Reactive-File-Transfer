@@ -84,6 +84,8 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 -- utils.py --
 > banner_display &nbsp;-&nbsp; Renders and displays the programs pyfiglet banner.
 
+> cha_init &nbsp;-&nbsp; Initializes the ChaCh20 algorithm object. 
+
 > chunk_bytes &nbsp;-&nbsp; Generator to split the bytes string passed in by the chunk length passed in it should be split into.
 
 > error_query &nbsp;-&nbsp; Looks up the errno message to get description.

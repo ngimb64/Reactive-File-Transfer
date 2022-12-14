@@ -13,7 +13,7 @@ from rich.progress import Progress
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 # Custom modules #
-from Modules.crypto_handlers import fernet_decrypt, fernet_encrypt
+from Modules.crypto_handlers import chacha_decrypt, chacha_encrypt
 from Modules.network_handlers import client_init, port_check, server_init
 from Modules.utils import banner_display, chunk_bytes, error_query, parse_start_bytes, print_err, \
                           secure_delete, validate_ip, validate_port
@@ -188,11 +188,11 @@ def main():
     # If the remote host is already listening for connections #
     if port_check(target_ip_arg, port_arg):
         # Act as the client side of connection #
-        conn, fern_key = client_init(target_ip_arg, port_arg)
+        conn, symm_algo = client_init(target_ip_arg, port_arg)
     # If no remote listeners are active #
     else:
         # Act as the server side of the connection #
-        conn, fern_key = server_init(port_arg)
+        conn, symm_algo = server_init(port_arg)
 
     # Initialize the automated file sender daemon thread instance #
     auto_file_reader = Thread(target=auto_file_outgoing, daemon=True, args=())
@@ -232,12 +232,12 @@ def main():
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=(file_size + len(chunk)))
 
-                        logging.info('Send data length before encryption: %d\n\n', len(chunk))
+                        logging.info('Send data length before encryption: %s\n\n', len(chunk))
 
                         # Encrypt the data chunk to be sent #
-                        crypt_chunk = fernet_encrypt(fern_key, chunk)
+                        crypt_chunk = chacha_encrypt(symm_algo, chunk)
 
-                        logging.info('Send data length after encryption: %d\n\n', len(crypt_chunk))
+                        logging.info('Send data length after encryption: %s\n\n', len(crypt_chunk))
 
                         # Send the chunk of data through the TCP connection #
                         sock.sendall(crypt_chunk + b'<EOL>')
@@ -258,12 +258,12 @@ def main():
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
-                            logging.info('Recv data length before decryption: %d\n\n', len(item))
+                            logging.info('Recv data length before decryption: %s\n\n', len(item))
 
                             # Decrypt each item in parsed_inputs per iteration #
-                            plain_item = fernet_decrypt(fern_key, item)
+                            plain_item = chacha_decrypt(symm_algo, item)
 
-                            logging.info('Recv data length after decryption: %d\n\n',
+                            logging.info('Recv data length after decryption: %s\n\n',
                                          len(plain_item))
 
                             # If chunk contain the file name and size #
@@ -316,7 +316,7 @@ if __name__ == '__main__':
     out_path = path / folders[1]
 
     # Initialize the logging facilities #
-    logging.basicConfig(filename=str(log_name.resolve()),
+    logging.basicConfig(filename=str(log_name.resolve()), level=logging.DEBUG,
                         format='%(asctime)s line%(lineno)d::%(funcName)s[%(levelname)s]>>'
                         ' %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     # Create non-existing data transfer directories #
