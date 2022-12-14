@@ -16,7 +16,7 @@ from watchdog.observers import Observer
 # Custom modules #
 from Modules.crypto_handlers import chacha_decrypt, chacha_encrypt
 from Modules.network_handlers import client_init, port_check, server_init
-from Modules.utils import banner_display, error_query, parse_start_bytes, print_err, \
+from Modules.utils import banner_display, base64_parse, error_query, parse_start_bytes, print_err, \
                           secure_delete, validate_ip, validate_port
 
 
@@ -271,8 +271,10 @@ def main():
                             logging.info('Recv data length before decryption: %s\n', len(item))
                             logging.info('Recv data before decryption: %s\n', item)
 
+                            # Trim any base64 padding from received data #
+                            item = base64_parse(item)
                             # Decode the base64 item #
-                            decoded_crypt = base64.b64decode(item)
+                            decoded_crypt = base64.b64decode(item + (b'=' * (4 - len(item) % 4)))
                             # Decrypt each item in parsed_inputs per iteration #
                             plain_item = chacha_decrypt(symm_algo, decoded_crypt)
 

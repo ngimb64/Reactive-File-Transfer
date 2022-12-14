@@ -32,6 +32,25 @@ def banner_display():
         sys.exit(5)
 
 
+def base64_parse(b64_bytes: bytes) -> bytes:
+    """
+    Ensure the received chunk of data has base64 "=" padding removed, to be recalculated to prevent
+    decoding errors.
+
+    :param b64_bytes:  The base64 bytes string to check for "=" padding.
+    :return:  The parsed base64 bytes string.
+    """
+    while True:
+        # If there is a base64 equals padding at end of data #
+        if b64_bytes.decode().endswith('='):
+            # Trim it from the end of data #
+            b64_bytes = b64_bytes[:-1]
+
+        break
+
+    return b64_bytes
+
+
 def error_query(err_path: str, err_mode: str, err_obj):
     """
     Looks up the errno message to get description.

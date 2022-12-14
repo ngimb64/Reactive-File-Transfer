@@ -1,8 +1,6 @@
 # Reactive File Transfer (RFT)
-
-[//]: # (![alt text]&#40;https://github.com/ngimb64/Reactive-File-Transfer/blob/main/ReactiveFileTransfer.gif?raw=true&#41;)
-
-[//]: # (![alt text]&#40;https://github.com/ngimb64/Reactive-File-Transfer/blob/main/ReactiveFileTransfer.png?raw=true&#41;)
+![alt text](https://github.com/ngimb64/Reactive-File-Transfer/blob/main/ReactiveFileTransfer.gif?raw=true)
+![alt text](https://github.com/ngimb64/Reactive-File-Transfer/blob/main/ReactiveFileTransfer.png?raw=true)
 
 &#9745;&#65039; Bandit verified<br>
 &#9745;&#65039; Synk verified<br>
