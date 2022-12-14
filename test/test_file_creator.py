@@ -1,11 +1,14 @@
 from pwn import cyclic
 
-start_size = 256
+size = 256
 file_num = 1
 
-while start_size <= 4096:
+# While the size of written data is less
+# than or equals to 8X max buffer size #
+while size <= 32768:
     with open(f'test_file{file_num}.txt', 'w', encoding='utf-8') as out_file:
-        out_file.write(cyclic(start_size - 5).decode())
+        # Write current size as random data with pwn tools cyclic function #
+        out_file.write(cyclic(size).decode())
 
-    start_size = start_size * 2
+    size = size * 2
     file_num += 1

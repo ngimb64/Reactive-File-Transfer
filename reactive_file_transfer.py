@@ -103,7 +103,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
                     # While there is data left in the file to be read #
                     while unread_data > 0:
                         # If amount of unread data will fit in one chunk #
-                        if len(unread_data) <= BUFFER_SIZE - 5:
+                        if unread_data <= BUFFER_SIZE - 5:
                             # Put last of the data in send queue #
                             data = send_file.read(unread_data)
                         # If amount of unread data exceeds size of data buffer #
