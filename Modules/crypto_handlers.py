@@ -1,5 +1,6 @@
 # pylint: disable=E0401
 """ Built-in module """
+import base64
 import binascii
 import logging
 import socket
@@ -84,7 +85,9 @@ def fernet_decrypt(fernet_key: bytes, data: bytes) -> bytes:
     """
     try:
         # Decrypt each item in parsed_inputs per iteration #
-        plain_data = Fernet(fernet_key).decrypt(data)
+        base64_data = Fernet(fernet_key).decrypt(data)
+        # Decode the decrypted data back to readable format #
+        plain_data = base64.b64decode(base64_data)
 
     # If error occurs during fernet decryption process #
     except (binascii.Error, InvalidKey, InvalidToken, TypeError, ValueError) as decrypt_err:
@@ -106,8 +109,10 @@ def fernet_encrypt(fernet_key: bytes, plain_data: bytes) -> bytes:
     :return:  The encrypted plain text data that was passed in.
     """
     try:
+        # Encode the data in base64 to prevent parsing errors during decryption #
+        base64_data = base64.b64encode(plain_data)
         # Encrypt chunk before sending #
-        crypt_item = Fernet(fernet_key).encrypt(plain_data)
+        crypt_item = Fernet(fernet_key).encrypt(base64_data)
 
     # If error occurs during fernet encryption process #
     except (binascii.Error, InvalidKey, InvalidToken, TypeError, ValueError) as encrypt_err:

@@ -231,11 +231,16 @@ def main():
                             # Setup progress-bar for file output #
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=(file_size + len(chunk)))
+
+                        logging.info('Send data length before encryption: %d\n\n', len(chunk))
+
                         # Encrypt the data chunk to be sent #
-                        crypt_item = fernet_encrypt(fern_key, chunk)
+                        crypt_chunk = fernet_encrypt(fern_key, chunk)
+
+                        logging.info('Send data length after encryption: %d\n\n', len(crypt_chunk))
 
                         # Send the chunk of data through the TCP connection #
-                        sock.sendall(crypt_item + b'<EOL>')
+                        sock.sendall(crypt_chunk + b'<EOL>')
                         # Update the progress bar #
                         progress.update(send_progress, advance=len(chunk))
 
@@ -253,8 +258,13 @@ def main():
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
+                            logging.info('Recv data length before decryption: %d\n\n', len(item))
+
                             # Decrypt each item in parsed_inputs per iteration #
                             plain_item = fernet_decrypt(fern_key, item)
+
+                            logging.info('Recv data length after decryption: %d\n\n',
+                                         len(plain_item))
 
                             # If chunk contain the file name and size #
                             if BUFFER_DIV in plain_item:
