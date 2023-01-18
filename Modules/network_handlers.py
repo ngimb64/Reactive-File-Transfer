@@ -7,10 +7,10 @@ import time
 import sys
 # External modules #
 from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHash, VerifyMismatchError
-from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+from argon2.exceptions import HashingError, InvalidHash, VerifyMismatchError
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # Custom modules #
-from Modules.crypto_handlers import aesccm_decrypt, aesccm_encrypt, cha_init
+from Modules.crypto_handlers import authenticated_decrypt, authenticated_encrypt
 from Modules.utils import pass_input, print_err, split_handler
 
 
@@ -54,8 +54,16 @@ def client_init(target_ip: str, port: int) -> tuple:
 
     # Initialize hash verifying instance #
     argon_instance = PasswordHasher()
-    # Argon2 hash the users input password #
-    hash_pass = argon_instance.hash(session_pass)
+    try:
+        # Argon2 hash the users input password #
+        hash_pass = argon_instance.hash(session_pass)
+
+    # If error occurs during Argon2 hashing #
+    except HashingError as hash_err:
+        print_err('Error occurred hashing password to send for validation')
+        logging.error('Error occurred hashing password to send for validation: %s\n\n', hash_err)
+        sys.exit(6)
+
     # Send the hashed password to the server to be verified #
     sock.sendall(hash_pass.encode())
 
@@ -71,16 +79,16 @@ def client_init(target_ip: str, port: int) -> tuple:
     # Split the received bytes based on <$> divisor #
     keys = split_handler(data, sock)
     # Split keys in memory as bytes #
-    aesccm_key = keys[0]
-    nonce = keys[1]
-    crypt_cha_key = keys[2]
-    crypt_cha_nonce = keys[3]
+    auth_key = keys[0]
+    auth__nonce = keys[1]
+    crypt_key = keys[2]
+    crypt_nonce = keys[3]
+    crypt_hmac = keys[4]
 
-    # Decrypt the session key and nonce #
-    cha_key = aesccm_decrypt(aesccm_key, nonce, crypt_cha_key, session_pass, sock)
-    cha_nonce = aesccm_decrypt(aesccm_key, nonce, crypt_cha_nonce, session_pass, sock)
-    # Initalize the ChaCha20 algo instance with session key and nonce #
-    cha_algo = cha_init(cha_key, cha_nonce)
+    # Decrypt the session symmetrical key, nonce, and HMAC #
+    symm_key = authenticated_decrypt(auth_key, auth__nonce, crypt_key, session_pass, sock)
+    symm_nonce = authenticated_decrypt(auth_key, auth__nonce, crypt_nonce, session_pass, sock)
+    hmac_key = authenticated_decrypt(auth_key, auth__nonce, crypt_hmac, session_pass, sock)
 
     # Send operation success status to server upon completion #
     sock.sendall(b'True')
@@ -91,7 +99,7 @@ def client_init(target_ip: str, port: int) -> tuple:
     print('[!] Password verified and keys have been sent .. data transmission through the network '
           'is now permitted\n')
 
-    return sock, cha_algo
+    return sock, symm_key, symm_nonce, hmac_key
 
 
 def port_check(ip_addr: str, port: int) -> bool:
@@ -196,19 +204,24 @@ def server_init(port: int) -> tuple:
                   'connection')
         sys.exit(9)
 
-    # Generate aesccm components for encrypting symmetrical key to send to client #
-    aesccm_key = AESCCM.generate_key(bit_length=256)
-    nonce = os.urandom(13)
-    # Generate 256 bit ChaCha20 key and 128 bit nonce #
-    cha_key = os.urandom(32)
-    cha_nonce = os.urandom(16)
+    # Generate AESGCM authenticated components for encrypting symmetrical key #
+    auth_key = AESGCM.generate_key(bit_length=256)
+    auth_nonce = os.urandom(96 // 8)
+    # Generate AESGCM components that will act as symmetrical key #
+    symm_key = AESGCM.generate_key(bit_length=256)
+    symm_nonce = os.urandom(96 // 8)
+    # Generate HMAC signature for symmetrical data integrity #
+    hmac_key = os.urandom(256//8)
 
-    # Encrypt the session key and nonce for transit #
-    crypt_key = aesccm_encrypt(aesccm_key, nonce, cha_key, session_pass, sock)
-    crypt_nonce = aesccm_encrypt(aesccm_key, nonce, cha_nonce, session_pass, sock)
+    # Encrypt the session symmetrical key, nonce, and hmac for transit #
+    crypt_key = authenticated_encrypt(auth_key, auth_nonce, symm_key, session_pass, sock)
+    crypt_nonce = authenticated_encrypt(auth_key, auth_nonce, symm_nonce, session_pass, sock)
+    crypt_hmac = authenticated_encrypt(auth_key, auth_nonce, hmac_key, session_pass, sock)
 
-    # Parse the encrypted symmetrical key and aessccm key & nonce for transit to client #
-    key_bytes = b''.join([aesccm_key, b'<$>', nonce, b'<$>', crypt_key, b'<$>', crypt_nonce])
+    # Parse the authenticated components and encrypted symmetrical
+    # key, nonce, & HMAC for transit to client #
+    key_bytes = b''.join([auth_key, b'<$>', auth_nonce, b'<$>', crypt_key, b'<$>', crypt_nonce,
+                          b'<$>', crypt_hmac])
     # Send the parsed bytes with keys to client #
     client_sock.sendall(key_bytes)
 
@@ -221,12 +234,10 @@ def server_init(port: int) -> tuple:
         logging.error('Error occurred parsing and decrypting the send symmetrical key\n')
         sys.exit(11)
 
-    # Initialize ChaCha20 encryption algo #
-    cha_algo = cha_init(cha_key, cha_nonce)
     # Set the socket to non-blocking #
     client_sock.setblocking(False)
 
     print('[!] Password verified and keys have been sent .. data transmission through the network '
           'is now permitted\n')
 
-    return client_sock, cha_algo
+    return client_sock, symm_key, symm_nonce, hmac_key

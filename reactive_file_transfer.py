@@ -8,16 +8,16 @@ import select
 import sys
 import time
 from pathlib import Path
-from threading import Thread, Lock
+from threading import Thread
 # External modules #
 from rich.progress import Progress
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 # Custom modules #
-from Modules.crypto_handlers import chacha_decrypt, chacha_encrypt
+from Modules.crypto_handlers import symm_decrypt, symm_encrypt
 from Modules.network_handlers import client_init, port_check, server_init
 from Modules.utils import banner_display, base64_parse, error_query, parse_start_bytes, print_err, \
-                          secure_delete, validate_ip, validate_port
+                          validate_ip, validate_port
 
 
 # Global variables #
@@ -25,8 +25,6 @@ BUFFER_SIZE = 4096
 BUFFER_DIV = b'<$>'
 SEND_QUEUE = queue.Queue()
 READ_QUEUE = queue.Queue()
-PARSE_MUTEX = Lock()
-ERR_MUTEX = Lock()
 
 
 def auto_file_incoming():
@@ -39,12 +37,8 @@ def auto_file_incoming():
     while True:
         # Get the initial string with the file name and size #
         title_chunk = READ_QUEUE.get()
-
-        # Obtain exclusive access to function with mutex lock #
-        with PARSE_MUTEX:
-            # Parse the file name and size from the received start bytes #
-            file_name, _ = parse_start_bytes(title_chunk.encode(), BUFFER_DIV)
-
+        # Parse the file name and size from the received start bytes #
+        file_name, _ = parse_start_bytes(title_chunk.encode(), BUFFER_DIV)
         # Format the incoming file path #
         file_path = in_path / file_name
 
@@ -65,10 +59,8 @@ def auto_file_incoming():
 
         # If error occurs during file operation #
         except (IOError, OSError) as file_err:
-            # Obtain exclusive access to function with mutex lock #
-            with ERR_MUTEX:
-                # Lookup the file error and log it #
-                error_query(str(file_path.resolve), 'a', file_err)
+            # Lookup the file error and log it #
+            error_query(str(file_path), 'a', file_err)
 
 
 class OutgoingFileDetector(FileSystemEventHandler):
@@ -92,6 +84,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
             # Get the size of the file #
             file_size = file_path.stat().st_size
             unread_data = file_size
+
             # Format file name and size with divider as start bytes #
             start_bytes = f'{file.name}{BUFFER_DIV.decode()}{file_size}'.encode()
             # Send start bytes for setup and progress bar on remote system #
@@ -103,13 +96,13 @@ class OutgoingFileDetector(FileSystemEventHandler):
                     # While there is data left in the file to be read #
                     while unread_data > 0:
                         # If amount of unread data will fit in one chunk #
-                        if unread_data <= BUFFER_SIZE - 5:
+                        if unread_data <= BUFFER_SIZE - 37:
                             # Put last of the data in send queue #
                             data = send_file.read(unread_data)
                         # If amount of unread data exceeds size of data buffer #
                         else:
                             # Put max chunk in send queue #
-                            data = send_file.read(BUFFER_SIZE - 5)
+                            data = send_file.read(BUFFER_SIZE - 37)
 
                         # Put read data chunk in send queue and subtract from read bytes #
                         SEND_QUEUE.put(data)
@@ -117,17 +110,14 @@ class OutgoingFileDetector(FileSystemEventHandler):
 
             # If error occurs during file operation #
             except (IOError, OSError) as file_err:
-                # Obtain exclusive access to function with mutex lock #
-                with ERR_MUTEX:
-                    # Lookup the file error and log it #
-                    error_query(str(file_path.resolve()), 'rb', file_err)
-                    continue
+                # Lookup the file error and log it #
+                error_query(str(file_path), 'rb', file_err)
+                continue
 
             # Put EOF descriptor for remote system to know transfer is complete #
             SEND_QUEUE.put(b'<EOF>')
-            # Delete the file from outgoing folder and overwrite
-            # numerous passes of random data #
-            secure_delete(file_path)
+            # Delete file #
+            os.unlink(file_path)
 
 
 def auto_file_outgoing():
@@ -142,7 +132,7 @@ def auto_file_outgoing():
     # Initialize the observer object #
     observer = Observer()
     # Schedule the file monitoring object to run #
-    observer.schedule(file_monitor, str(out_path.resolve()), recursive=True)
+    observer.schedule(file_monitor, str(out_path), recursive=True)
     # Start the file monitoring object #
     observer.start()
 
@@ -191,11 +181,11 @@ def main():
         # If the remote host is already listening for connections #
         if port_check(target_ip_arg, port_arg):
             # Act as the client side of connection #
-            conn, symm_algo = client_init(target_ip_arg, port_arg)
+            conn, symm_key, symm_nonce, hmac_key = client_init(target_ip_arg, port_arg)
         # If no remote listeners are active #
         else:
             # Act as the server side of the connection #
-            conn, symm_algo = server_init(port_arg)
+            conn, symm_key, symm_nonce, hmac_key = server_init(port_arg)
 
     except KeyboardInterrupt:
         print('\n[!] Ctrl + C detected .. exiting program')
@@ -230,22 +220,21 @@ def main():
 
                         # If chunk contain the file name and size #
                         if BUFFER_DIV in chunk:
-                            # Obtain exclusive access to function with mutex lock #
-                            with PARSE_MUTEX:
-                                # Parse the file name and size from the sent start bytes #
-                                file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
+                            # Parse the file name and size from the sent start bytes #
+                            file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
 
                             # Setup progress-bar for file output #
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=(file_size + len(chunk)))
 
-                        logging.info('Send data length before encryption: %s\n', len(chunk))
+                        logging.info('Send data length before encryption: %s\n\n', len(chunk))
 
                         # Encrypt and encode the data chunk to be sent #
-                        crypt_chunk = chacha_encrypt(symm_algo, chunk)
-                        encoded_chunk = base64.urlsafe_b64encode(crypt_chunk)
+                        crypt_chunk, hmac_sig = symm_encrypt(symm_key, symm_nonce, hmac_key, chunk)
+                        # Base64 encode encrypted data appended with HMAC signature #
+                        encoded_chunk = base64.urlsafe_b64encode(crypt_chunk + hmac_sig)
 
-                        logging.info('Send data length after encryption: %s\n', len(crypt_chunk))
+                        logging.info('Send data length after encryption: %s\n\n', len(crypt_chunk))
 
                         # Send the chunk of data through the TCP connection #
                         sock.sendall(encoded_chunk + b'<EOL>')
@@ -259,7 +248,7 @@ def main():
 
                     # If the socket received data #
                     if len(chunk) > 0:
-                        logging.info('Initial recv chunk of data: %s\n', chunk)
+                        logging.info('Initial recv chunk of data: %s\n\n', chunk)
 
                         # Split up any combined chunks of data as list #
                         parsed_inputs = chunk.split(b'<EOL>')
@@ -268,8 +257,8 @@ def main():
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
-                            logging.info('Recv data length before decryption: %s\n', len(item))
-                            logging.info('Recv data before decryption: %s\n', item)
+                            logging.info('Recv data length before decryption: %s\n\n', len(item))
+                            logging.info('Recv data before decryption: %s\n\n', item)
 
                             # Trim any base64 padding from received data #
                             item = base64_parse(item)
@@ -277,17 +266,15 @@ def main():
                             decoded_crypt = base64.urlsafe_b64decode(item +
                                                                      (b'=' * (4 - len(item) % 4)))
                             # Decrypt each item in parsed_inputs per iteration #
-                            plain_item = chacha_decrypt(symm_algo, decoded_crypt)
+                            plain_item = symm_decrypt(symm_key, symm_nonce, hmac_key, decoded_crypt)
 
-                            logging.info('Recv data length after decryption: %s\n', len(plain_item))
-                            logging.info('Recv data after decryption: %s\n', plain_item)
+                            logging.info('Recv data length after decryption: %s\n\n', len(plain_item))
+                            logging.info('Recv data after decryption: %s\n\n', plain_item)
 
                             # If chunk contain the file name and size #
                             if BUFFER_DIV in plain_item:
-                                # Obtain exclusive access to function with mutex lock #
-                                with PARSE_MUTEX:
-                                    # Parse the file name and size from the received start bytes #
-                                    file_name, file_size = parse_start_bytes(plain_item, BUFFER_DIV)
+                                # Parse the file name and size from the received start bytes #
+                                file_name, file_size = parse_start_bytes(plain_item, BUFFER_DIV)
 
                                 # Setup progress-bar for file input #
                                 recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
@@ -301,7 +288,7 @@ def main():
                 for sock in conn_errs:
                     print_err('Error occurred during socket operation')
                     # Put message in error queue to be displayed stderr #
-                    logging.error('Error occurred during socket operation: %s\n', sock)
+                    logging.error('Error occurred during socket operation: %s\n\n', sock)
                     # Remove exception data in inputs in outputs list #
                     inputs.remove(sock)
                     outputs.remove(sock)
@@ -322,7 +309,7 @@ def main():
 
 if __name__ == '__main__':
     # Get the current working directory #
-    path = Path('.')
+    path = Path.cwd()
     # Group critical folders for operation #
     folders = ('Incoming', 'Outgoing')
     # Format log path and name #
@@ -332,11 +319,11 @@ if __name__ == '__main__':
     out_path = path / folders[1]
 
     # Initialize the logging facilities #
-    logging.basicConfig(filename=str(log_name.resolve()), level=logging.DEBUG,
+    logging.basicConfig(filename=log_name, level=logging.DEBUG,
                         format='%(asctime)s line%(lineno)d::%(funcName)s[%(levelname)s]>>'
                         ' %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     # Create non-existing data transfer directories #
-    [Path(folder).mkdir(exist_ok=True) for folder in folders]
+    [Path(folder).mkdir(parents=True, exist_ok=True) for folder in folders]
     # Exit code #
     RET = 0
 
@@ -346,7 +333,7 @@ if __name__ == '__main__':
     # If unknown exception occurs #
     except Exception as err:
         # Log error and set error exit code #
-        logging.exception('Unknown exception occurred: %s\n', err)
+        logging.exception('Unknown exception occurred: %s\n\n', err)
         RET = 1
 
     sys.exit(RET)

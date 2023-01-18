@@ -2,7 +2,6 @@
 """ Built-in modules """
 import argparse
 import os
-import os.path
 import sys
 import venv
 from pathlib import Path
@@ -27,7 +26,7 @@ def system_cmd(cmd_args: list, timeout_secs: int):
     # Execute the pip upgrade command as child process #
     with Popen(cmd_args) as command:
         try:
-            # Timeout child process after 60 seconds #
+            # Timeout child process when timeout occurs #
             command.communicate(timeout=timeout_secs)
 
         # If error occurs during pip installation or process times out #
@@ -74,10 +73,11 @@ class ExtendedEnvBuilder(venv.EnvBuilder):
         url = 'https://github.com/abadger/setuptools/blob/master/ez_setup.py'
         self.install_script(context, 'setuptools', url)
 
-        # clear up the setuptools archive which gets downloaded
+        # Clear up the setuptools archive which gets downloaded #
         pred = lambda o: o.startswith('setuptools-') and o.endswith('.tar.gz')
         files = filter(pred, os.listdir(context.bin_path))
 
+        # Iterate through files in bin path and delete #
         for file in files:
             file = os.path.join(context.bin_path, file)
             os.unlink(file)
@@ -101,44 +101,40 @@ class ExtendedEnvBuilder(venv.EnvBuilder):
         """
         os.environ['VIRTUAL_ENV'] = context.env_dir
 
+        # If no setup tools #
         if not self.nodist:
             # Install setup tools #
             self.install_setuptools(context)
 
+        # If no pip and setuptools #
         if not self.nopip and not self.nodist:
-            # Install pip #
+            # Install them #
             self.install_pip(context)
 
         # Get the current working dir #
-        path = Path('.')
+        path = Path('.').absolute()
         venv_path = Path(context.env_dir)
         # Format the package path #
         package_path = path / PACKAGE_FILENAME
 
         # If the OS is Windows #
         if os.name == 'nt':
-            win_venv_path = venv_path / 'Scripts'
             # Format path for pip installation in venv #
-            pip_path = win_venv_path / 'pip.exe'
+            pip_path = venv_path / 'Scripts' / 'pip.exe'
         # If the OS is Linux #
         else:
-            lin_venv_path = venv_path / 'bin'
             # Format path for pip installation in venv #
-            pip_path = lin_venv_path / 'pip'
+            pip_path = venv_path / 'bin' / 'pip'
 
         # Execute the pip upgrade command as child process #
         command = [str(pip_path.resolve()), 'install', '--upgrade', 'pip']
         system_cmd(command, 60)
 
-        # If the package list file exists and has read access #
-        if package_path.exists() and os.access(str(package_path.resolve()), os.R_OK):
+        # If the package list file exists #
+        if package_path.exists():
             # Execute pip -r into venv based on package list #
             command = [str(pip_path.resolve()), 'install', '-r', str(package_path.resolve())]
             system_cmd(command, 300)
-        # If the package list file is not accessible #
-        else:
-            print_err(f'Unable to access external package file {str(package_path.resolve())}')
-            sys.exit(4)
 
     def reader(self, stream, context):
         """
@@ -152,16 +148,22 @@ class ExtendedEnvBuilder(venv.EnvBuilder):
         progress = self.progress
 
         while True:
+            # Read line from subprocess stream #
             proc_stream = stream.readline()
 
+            # If there is no more data to read #
             if not proc_stream:
                 break
 
+            # If progress has no data #
             if progress is not None:
                 progress(proc_stream, context)
+            # If progress is present #
             else:
+                # If not set to verbose #
                 if not self.verbose:
                     sys.stderr.write('.')
+                # If verbosity set #
                 else:
                     sys.stderr.write(proc_stream.decode('utf-8'))
 
@@ -185,7 +187,7 @@ class ExtendedEnvBuilder(venv.EnvBuilder):
 
         # If the URL starts with http #
         if url.lower().startswith('http'):
-            # Download script into the virtual environment's binaries folder
+            # Download script into the virtual environment's binaries folder #
             urlretrieve(url, distpath)
         # Unusual URL detected #
         else:
@@ -199,19 +201,20 @@ class ExtendedEnvBuilder(venv.EnvBuilder):
         else:
             term = ''
 
+        # If progress is set #
         if progress is not None:
             progress(f'Installing {name} .. {term}', 'main')
+        # If progress is not set #
         else:
             sys.stderr.write(f'Installing {name} .. {term}')
             sys.stderr.flush()
 
         args = [context.env_exe, file_name]
 
-        # Install in the virtual environment
+        # Install in the virtual environment #
         with Popen(args, stdout=PIPE, stderr=PIPE, cwd=binpath) as proc:
             thread_1 = Thread(target=self.reader, args=(proc.stdout, 'stdout'))
             thread_1.start()
-
             thread_2 = Thread(target=self.reader, args=(proc.stderr, 'stderr'))
             thread_2.start()
 

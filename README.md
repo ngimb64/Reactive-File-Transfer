@@ -13,7 +13,8 @@ This program runs on Windows and Linux, written in Python version 3.10.6
 Reactive file transfer establishes an automated multi-directional encrypted file transfer service with password protection.
 By utilizing active file system monitoring, the program features designated directories that are synced across remote systems.
 When a file system modification is activated due to moving data in the designated Outgoing directory, it automatically transfers to the remote systems Incoming directory.
-RFT features a combination of symmetrical encryption with HMAC integrity check that is protected with AESCCM authenticated encryption during transmission.
+RFT features a combination of AESGCM symmetrical encryption with HMAC integrity check that is protected with AESGCM authenticated encryption when exchanged.
+The AESGCM algorithm utilized features 256 bit and 96 bit nonce as recommended by NIST standards.
 
 ## Installation
 - Run the setup.py script to build a virtual environment and install all external packages in the created venv.
@@ -55,13 +56,13 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 >                    Finally, the main thread polls the network socket in a non-blocking manner; getting data from the send queue and sending it, and reading data from the socket and putting it in the read queue.
 
 -- crypto_handlers.py --
-> aesccm_decrypt &nbsp;-&nbsp; Decrypts the symmetrical fernet key used for encrypting and decrypting transfer data.
+> authenticated_decrypt &nbsp;-&nbsp; Decrypts the symmetrical AESGCM key used for encrypting and decrypting transfer data.
 
-> aesccm_encrypt &nbsp;-&nbsp; Encrypts the symmetrical fernet key used for encrypting and decrypting transfer data.
+> authenticated_encrypt &nbsp;-&nbsp; Encrypts the symmetrical AESGCM used for encrypting and decrypting transfer data.
 
-> fernet_decrypt &nbsp;-&nbsp; Utilizes the passed in fernet key to decrypt the passed in data in a error handled manner.
+> symm_decrypt &nbsp;-&nbsp; Verifies the HMAC signature with associated data and decrypts encrypted data to plain text.
 
-> fernet_encrypt &nbsp;-&nbsp; Utilizes the passed in fernet key to encrypt the passed in data in a error handled manner.
+> symm_encrypt &nbsp;-&nbsp; Encrypts the plain text data to be sent with AESGCM and creates HMAC verification signature.
 
 -- network_handlers.py --
 > client_init &nbsp;-&nbsp; Function is called after test socket connection attempt is successful indicating a server is already established on the other end.
@@ -84,8 +85,6 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 
 > base64_parse &nbsp;-&nbsp; Ensure the received chunk of data has base64 "=" padding removed, to be recalculated to prevent decoding errors.
 
-> cha_init &nbsp;-&nbsp; Initializes the ChaCh20 algorithm object. 
-
 > error_query &nbsp;-&nbsp; Looks up the errno message to get description.
 
 > int_convert &nbsp;-&nbsp; Convert the passed in size as string to int, handles errors accordingly.
@@ -95,8 +94,6 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 > pass_input &nbsp;-&nbsp; Gathers user input for session password and second password input for verification.
 
 > print_err &nbsp;-&nbsp; Displays error via stderr.
-
-> secure_delete &nbsp;-&nbsp; Overwrite file data with random data number of specified passes and overwrite with random data.
 
 > split_handler &nbsp;-&nbsp; Takes the passed in data and splits it based on specified divisor in error handled procedure.
 
@@ -117,7 +114,7 @@ RFT features a combination of symmetrical encryption with HMAC integrity check t
 > 13 - Error occurred decrypting data chunk received by remote host (fernet_decrypt)<br>
 
 -- network_handlers.py --
-> 6 - Password authentication failed on remote server host (client_init)<br>
+> 6 - Password local hashing or remote authentication failed on remote server host (client_init)<br>
 > 9 - Received client hash does not match established session password (server_init)<br>
 > 11 - If error occurred on the client side parsing and decrypting session symmetrical key (server_init)<br>
 

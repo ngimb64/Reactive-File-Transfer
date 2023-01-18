@@ -1,65 +1,64 @@
 # pylint: disable=E0401
 """ Built-in module """
-import binascii
 import logging
 import sys
 from socket import socket
 # External modules #
-from cryptography.exceptions import InvalidKey, InvalidTag
-from cryptography.hazmat.primitives.ciphers import algorithms, Cipher
-from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+from cryptography.exceptions import InvalidKey, InvalidTag, InvalidSignature, UnsupportedAlgorithm
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import hashes, hmac
 # Custom modules #
 from Modules.utils import print_err
 
 
-def aesccm_decrypt(aes_key: bytes, aes_nonce: bytes, fernet_key: bytes, sesh_pass: str,
-                   connection: socket) -> bytes:
+def authenticated_decrypt(aes_key: bytes, aes_nonce: bytes, crypt_symm: bytes, sesh_pass: str,
+                          connection: socket) -> bytes:
     """
-    Decrypts the symmetrical fernet key used for encrypting and decrypting transfer data.
+    Decrypts the symmetrical AESGCM key used for encrypting and decrypting transfer data.
 
-    :param aes_key:  The key for initializing the aesccm algo instance.
-    :param aes_nonce:  The nonce associated with aesccm decryption.
-    :param fernet_key:  The encrypted symmetrical fernet key to be decrypted.
+    :param aes_key:  The key for initializing the AESGCM algo instance.
+    :param aes_nonce:  The nonce associated with AESGCM decryption.
+    :param crypt_symm:  The encrypted symmetrical fernet key to be decrypted.
     :param sesh_pass:  The session password used as the final piece in the decryption process.
     :param connection:  Remote socket connection for sending failed status on error.
     :return:  The decrypted symmetrical fernet key.
     """
     try:
-        # Initialize the AESCCM algo instance #
-        aesccm = AESCCM(aes_key)
+        # Initialize the AESGCM algo instance #
+        aesgcm = AESGCM(aes_key)
         # Decrypt the encrypted symmetrical key with authenticated password #
-        symm_key = aesccm.decrypt(aes_nonce, fernet_key, sesh_pass.encode())
+        symm_key = aesgcm.decrypt(aes_nonce, crypt_symm, sesh_pass.encode())
 
-    # If error occurs during the AESCCM algo instance initialization or fernet key decryption #
+    # If error occurs during the AESGCM algo instance initialization or fernet key decryption #
     except (InvalidKey, InvalidTag, ValueError) as decrypt_err:
         # Send operation failure status upon failure #
         connection.sendall(b'False')
         # Print error, log, and exit program #
         print_err('Error occurred decrypting the retrieved session symmetrical key')
-        logging.error('Error occurred decrypting the retrieved session symmetrical key: %s\n',
+        logging.error('Error occurred decrypting the retrieved session symmetrical key: %s\n\n',
                       decrypt_err)
         sys.exit(8)
 
     return symm_key
 
 
-def aesccm_encrypt(aes_key: bytes, aes_nonce: bytes, fernet_key: bytes, sesh_pass: str,
-                   connection: socket) -> bytes:
+def authenticated_encrypt(aes_key: bytes, aes_nonce: bytes, symm_key: bytes, sesh_pass: str,
+                          connection: socket) -> bytes:
     """
-    Encrypts the symmetrical fernet key used for encrypting and decrypting transfer data.
+    Encrypts the symmetrical AESGCM used for encrypting and decrypting transfer data.
 
-    :param aes_key:  The key for initializing the aesccm algo instance.
-    :param aes_nonce:  The nonce associated with aesccm decryption.
-    :param fernet_key:  The encrypted symmetrical fernet key to be decrypted.
+    :param aes_key:  The key for initializing the AESGCM algo instance.
+    :param aes_nonce:  The nonce associated with AESGCM decryption.
+    :param symm_key:  The encrypted symmetrical fernet key to be decrypted.
     :param sesh_pass:  The session password used as the final piece in the decryption process.
     :param connection:  Remote socket connection for sending failed status on error.
     :return:  The decrypted symmetrical fernet key.
     """
     try:
-        # Initialize the AESCCM algo instance #
-        aesccm = AESCCM(aes_key)
-        # Encrypt the symmetrical key with aessccm password encryption #
-        crypt_key = aesccm.encrypt(aes_nonce, fernet_key, sesh_pass.encode())
+        # Initialize the AESGCM algo instance #
+        aesgcm = AESGCM(aes_key)
+        # Encrypt the symmetrical key with AESGCM password encryption #
+        crypt_key = aesgcm.encrypt(aes_nonce, symm_key, sesh_pass.encode())
 
     # If error occurs during symmetrical key encryption process #
     except (InvalidKey, InvalidTag, ValueError) as encrypt_err:
@@ -67,68 +66,78 @@ def aesccm_encrypt(aes_key: bytes, aes_nonce: bytes, fernet_key: bytes, sesh_pas
         connection.sendall(b'False')
         # Print error, log, and exit #
         print_err('Error occurred during symmetrical key encryption process')
-        logging.error('Error occurred during symmetrical key encryption process: %s\n',
+        logging.error('Error occurred during symmetrical key encryption process: %s\n\n',
                       encrypt_err)
         sys.exit(10)
 
     return crypt_key
 
 
-def chacha_decrypt(cha_algo: Cipher, data: bytes) -> bytes:
+def symm_decrypt(symm_key: bytes, symm_nonce: bytes, hmac_key: bytes, data: bytes) -> bytes:
     """
-    Utilizes the passed in ChaCha20 key to decrypt the passed in data in a error handled manner.
+    Verifies the HMAC signature with associated data and decrypts encrypted data to plain text.
 
-    :param cha_algo:  The ChaCha20 algorithm instance used for decryption.
-    :param data:  The encrypted text data to be decrypted and returned.
-    :return:  The decrypted text data in byte format.
+    :param symm_key:  The symmetrical AESGCM key.
+    :param symm_nonce:  The symmetrical AESGCM nonce.
+    :param hmac_key:  The HMAC signature key.
+    :param data:  The data to verified and decrypted.
+    :return:  The decrypted received data.
     """
     try:
-        # Set the algo instance to decryptor and decrypt #
-        decryptor = cha_algo.decryptor()
-        plain_data = decryptor.update(data)
+        # Shave the 32 byte HMAC from the end of the data #
+        signature = data[-32:]
+        # Intialize the HMAC algo instance #
+        hmac_algo = hmac.HMAC(hmac_key, hashes.SHA256())
+        # Update instance with HMAC data to be verified #
+        hmac_algo.update(data)
+        # Verifty the data integrity #
+        hmac_algo.verify(signature)
 
-    # If error occurs during ChaCha20 decryption process #
-    except (binascii.Error, TypeError, ValueError) as decrypt_err:
+        # Initialize AESGCM algo instance #
+        aesgcm = AESGCM(symm_key)
+        plain_data = aesgcm.decrypt(symm_nonce, data, None)
+
+    # If error occurs during symmetrical process #
+    except (IndexError, InvalidKey, InvalidTag, InvalidSignature, TypeError, UnsupportedAlgorithm,
+            ValueError) as decrypt_err:
         # Print error, log, and exit #
         print_err('Error occurring the decryption process of incoming data')
-        logging.error('Error occurring the decryption process of incoming data: %s\n', decrypt_err)
+        logging.error('Error occurring the decryption process of incoming data: %s\n\n',
+                      decrypt_err)
         sys.exit(13)
 
     return plain_data
 
 
-def chacha_encrypt(cha_algo: Cipher, plain_data: bytes) -> bytes:
+def symm_encrypt(symm_key: bytes, symm_nonce: bytes, hmac_key: bytes, plain_data: bytes) -> tuple:
     """
-    Utilizes the passed in ChaCha20 key to encrypt the passed in data in a error handled manner.
+    Encrypts the plain text data to be sent with AESGCM and creates HMAC verification signature.
 
-    :param cha_algo:  The ChaCha20 algo instance.
-    :param plain_data:  The plain text data to be encrypted and returned.
-    :return:  The encrypted plain text data that was passed in.
+    :param symm_key:  The symmetrical AESGCM encryption key.
+    :param symm_nonce:  The symmetrical AESGCM nonce.
+    :param hmac_key:  The HMAC signature key.
+    :param plain_data:  The plain data to be encrypted and signed.
+    :return:  The encrypted data and HMAC signature to be sent.
     """
     try:
-        # Set the algo instance to encryptor and encrypt it #
-        encryptor = cha_algo.encryptor()
-        crypt_item = encryptor.update(plain_data)
+        # Initialize AESGCM algo instance #
+        aesgcm = AESGCM(symm_key)
+        # Encrypt the data to be sent #
+        crypt_item = aesgcm.encrypt(symm_nonce, plain_data, None)
 
-    # If error occurs during fernet encryption process #
-    except (binascii.Error, TypeError, ValueError) as encrypt_err:
+        # Initialize the HMAC algo instance #
+        hmac_algo = hmac.HMAC(hmac_key, hashes.SHA256())
+        # Update HMAC instance with data to be signed #
+        hmac_algo.update(crypt_item)
+        # Get HMAC signature from data #
+        signature = hmac_algo.finalize()
+
+    # If error occurs during symmetrical encryption process #
+    except (InvalidKey, InvalidTag, InvalidSignature, TypeError, UnsupportedAlgorithm,
+            ValueError) as encrypt_err:
         # Print error, log, and exit #
         print_err('Error occurred encrypting data chunk for transit')
-        logging.error('Error occurred encrypting data chunk for transit: %s\n', encrypt_err)
+        logging.error('Error occurred encrypting data chunk for transit: %s\n\n', encrypt_err)
         sys.exit(12)
 
-    return crypt_item
-
-
-def cha_init(key: bytes, nonce: bytes) -> Cipher:
-    """
-    Initializes the ChaCh20 algorithm object.
-
-    :param key:  ChaCha20 key.
-    :param nonce:  ChaCha20 nonce.
-    :return:  Initialized ChaCha20 cipher instance.
-    """
-    # Initialize ChaCha20 encryption algo #
-    algo = algorithms.ChaCha20(key, nonce)
-    # Return the initialized ChaCha20 cipher object #
-    return Cipher(algo, mode=None)
+    return crypt_item, signature

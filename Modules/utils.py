@@ -3,14 +3,18 @@
 import errno
 import logging
 import os
-import pathlib
 import re
-import socket
 import sys
-import time
 from getpass import getpass
+from socket import socket
+from threading import Lock
 # External modules #
 from pyfiglet import Figlet, FigletError
+
+
+# Global variables #
+PARSE_MUTEX = Lock()
+ERR_MUTEX = Lock()
 
 
 def banner_display():
@@ -27,7 +31,7 @@ def banner_display():
     # If error occurs rendering the programs banner #
     except FigletError as banner_err:
         print_err('An error occurred rendering the RFT banner')
-        logging.exception('An error occurred rendering the RFT banner %s\n', banner_err)
+        logging.exception('An error occurred rendering the RFT banner %s\n\n', banner_err)
         sys.exit(5)
 
 
@@ -42,7 +46,7 @@ def base64_parse(b64_bytes: bytes) -> bytes:
     """
     while True:
         # If there is a base64 equals padding at end of data #
-        if b64_bytes.decode().endswith('='):
+        if b64_bytes.endswith(b'='):
             # Trim it from the end of data #
             b64_bytes = b64_bytes[:-1]
 
@@ -60,22 +64,24 @@ def error_query(err_path: str, err_mode: str, err_obj):
     :param err_obj:  The error message instance.
     :return:  Nothing
     """
-    # If file does not exist #
-    if err_obj.errno == errno.ENOENT:
-        logging.error('%s does not exist\n', err_path)
+    # Set thread lock for exclusive access #
+    with ERR_MUTEX:
+        # If file does not exist #
+        if err_obj.errno == errno.ENOENT:
+            logging.error('%s does not exist\n\n', err_path)
 
-    # If the file does not have read/write access #
-    elif err_obj.errno == errno.EPERM:
-        logging.error('%s does not have permissions for %s file mode\n', err_path, err_mode)
+        # If the file does not have read/write access #
+        elif err_obj.errno == errno.EPERM:
+            logging.error('%s does not have permissions for %s file mode\n\n', err_path, err_mode)
 
-    # File IO error occurred #
-    elif err_obj.errno == errno.EIO:
-        logging.error('IO error occurred during %s mode on %s\n', err_mode, err_path)
+        # File IO error occurred #
+        elif err_obj.errno == errno.EIO:
+            logging.error('IO error occurred during %s mode on %s\n\n', err_mode, err_path)
 
-    # If other unexpected file operation occurs #
-    else:
-        logging.error('Unexpected file operation occurred accessing %s: %s\n', err_path,
-                      err_obj.errno)
+        # If other unexpected file operation occurs #
+        else:
+            logging.error('Unexpected file operation occurred accessing %s: %s\n\n', err_path,
+                          err_obj.errno)
 
 
 def int_convert(str_int: str) -> int:
@@ -91,7 +97,7 @@ def int_convert(str_int: str) -> int:
 
     # If value can not be converted to int (not string) #
     except ValueError as val_err:
-        logging.error('Error converting file size to integer %s\n', val_err)
+        logging.error('Error converting file size to integer %s\n\n', val_err)
         sys.exit(14)
 
     return raw_int
@@ -106,12 +112,14 @@ def parse_start_bytes(data_chunk: bytes, divider: bytes) -> tuple:
     :param divider:  The divider used to split the file name and size.
     :return:  The parsed file name and size as tuple grouping.
     """
-    # Parse the file name and size from the initial string with <$> divider #
-    name, size = data_chunk.split(divider)
-    # Strip any extra path from file name #
-    name = os.path.basename(name.decode())
-    # Convert the file size to integer #
-    size = int_convert(size.decode())
+    # Set thread lock for exclusive access #
+    with PARSE_MUTEX:
+        # Parse the file name and size from the initial string with <$> divider #
+        name, size = data_chunk.split(divider)
+        # Strip any extra path from file name #
+        name = os.path.basename(name.decode())
+        # Convert the file size to integer #
+        size = int_convert(size.decode())
 
     return name, size
 
@@ -148,51 +156,7 @@ def print_err(msg: str):
     print(f'\n* [ERROR] {msg} *\n', file=sys.stderr)
 
 
-def secure_delete(path: pathlib.Path, passes=10):
-    """
-    Overwrite file data with random data number of specified passes and overwrite with random data.
-
-    :param path:  Path to the file to be overwritten and deleted.
-    :param passes:  Number of pass to perform random data overwrite.
-    :return:  Nothing
-    """
-    # Get the file size in bytes #
-    length = path.stat().st_size
-    count, seconds = 0, 1
-
-    while True:
-        try:
-            # Open file and overwrite the data for number of passes #
-            with path.open('wb') as file:
-                # Iterate number of passes to overwrite with
-                # random data desired number of times #
-                for _ in range(passes):
-                    # Point file pointer to start of file #
-                    file.seek(0)
-                    # Write random data #
-                    file.write(os.urandom(length))
-
-            # Unlink (delete) file from file system #
-            os.remove(path)
-            break
-
-        # If error occurs during file operation #
-        except (IOError, OSError) as delete_err:
-            # If attempts maxed #
-            if count == 3:
-                # Log error and break out of loop to attempt to delete file #
-                logging.error('Three consecutive errors occurred file data scrub operation at %s:'
-                              ' %s\n', str(path), delete_err)
-                sys.exit(15)
-
-            # Increase count, sleep, and increase sleep interval by 1 #
-            count += 1
-            time.sleep(seconds)
-            seconds += 1
-            continue
-
-
-def split_handler(in_data: bytes, connection: socket.socket) -> list:
+def split_handler(in_data: bytes, connection: socket) -> list:
     """
     Takes the passed in data and splits it based on specified divisor in error handled procedure.
 
@@ -210,7 +174,7 @@ def split_handler(in_data: bytes, connection: socket.socket) -> list:
         connection.sendall(b'False')
         # Print error, log, and exit #
         print_err('The retrieved key data lacks multiple values to split')
-        logging.error('The retrieved key data lacks multiple values to split: %s\n', val_err)
+        logging.error('The retrieved key data lacks multiple values to split: %s\n\n', val_err)
         sys.exit(7)
 
     return byte_list
