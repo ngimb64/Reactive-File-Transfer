@@ -262,7 +262,7 @@ def main():
 
                             # Trim any base64 padding from received data #
                             item = base64_parse(item)
-                            # Decode the base64 item #
+                            # Decode the base64 re-padded item #
                             decoded_crypt = base64.urlsafe_b64decode(item +
                                                                      (b'=' * (4 - len(item) % 4)))
                             # Decrypt each item in parsed_inputs per iteration #

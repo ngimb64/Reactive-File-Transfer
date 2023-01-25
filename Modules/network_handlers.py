@@ -1,17 +1,20 @@
 # pylint: disable=E0401
 """ Built-in modules """
+import base64
 import logging
 import os
+import re
 import socket
 import time
 import sys
+from subprocess import check_output
 # External modules #
 from argon2 import PasswordHasher
 from argon2.exceptions import HashingError, InvalidHash, VerifyMismatchError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # Custom modules #
 from Modules.crypto_handlers import authenticated_decrypt, authenticated_encrypt
-from Modules.utils import pass_input, print_err, split_handler
+from Modules.utils import base64_parse, pass_input, print_err, split_handler
 
 
 def client_init(target_ip: str, port: int) -> tuple:
@@ -60,6 +63,7 @@ def client_init(target_ip: str, port: int) -> tuple:
 
     # If error occurs during Argon2 hashing #
     except HashingError as hash_err:
+        # Print error, log, and exit #
         print_err('Error occurred hashing password to send for validation')
         logging.error('Error occurred hashing password to send for validation: %s\n\n', hash_err)
         sys.exit(6)
@@ -78,17 +82,18 @@ def client_init(target_ip: str, port: int) -> tuple:
 
     # Split the received bytes based on <$> divisor #
     keys = split_handler(data, sock)
-    # Split keys in memory as bytes #
-    auth_key = keys[0]
-    auth__nonce = keys[1]
-    crypt_key = keys[2]
-    crypt_nonce = keys[3]
-    crypt_hmac = keys[4]
-
+    # Strip any padding to be re-calculated #
+    keys = [base64_parse(key) for key in keys]
+    # Split keys in memory as bytes with re-calculated padding #
+    auth_key = base64.urlsafe_b64decode(keys[0] + (b'=' * (4 - len(keys[0]) % 4)))
+    auth_nonce = base64.urlsafe_b64decode(keys[1] + (b'=' * (4 - len(keys[1]) % 4)))
+    crypt_key = base64.urlsafe_b64decode(keys[2] + (b'=' * (4 - len(keys[2]) % 4)))
+    crypt_nonce = base64.urlsafe_b64decode(keys[3] + (b'=' * (4 - len(keys[3]) % 4)))
+    crypt_hmac = base64.urlsafe_b64decode(keys[4] + (b'=' * (4 - len(keys[4]) % 4)))
     # Decrypt the session symmetrical key, nonce, and HMAC #
-    symm_key = authenticated_decrypt(auth_key, auth__nonce, crypt_key, session_pass, sock)
-    symm_nonce = authenticated_decrypt(auth_key, auth__nonce, crypt_nonce, session_pass, sock)
-    hmac_key = authenticated_decrypt(auth_key, auth__nonce, crypt_hmac, session_pass, sock)
+    symm_key = authenticated_decrypt(auth_key, auth_nonce, crypt_key, session_pass, sock)
+    symm_nonce = authenticated_decrypt(auth_key, auth_nonce, crypt_nonce, session_pass, sock)
+    hmac_key = authenticated_decrypt(auth_key, auth_nonce, crypt_hmac, session_pass, sock)
 
     # Send operation success status to server upon completion #
     sock.sendall(b'True')
@@ -154,9 +159,39 @@ def server_init(port: int) -> tuple:
         ip_addr = socket.gethostbyname(hostname)
     # If the OS is Linux #
     else:
-        # Open network for Linux for now due
-        # to gethostname() inconsistency #
-        ip_addr = '0.0.0.0'
+        # Run if config and get the return output #
+        network_data = check_output(['ifconfig'], text=True)
+        # Search ifconfig output data for ip address regex matches #
+        matches = re.findall(r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}', network_data)
+        # If an ip was found in the ifconfig output #
+        if matches:
+            while True:
+                # Display ip addresses found in ifconfig in clean fashion with indexes #
+                print(f'The following IP\'s were found running ifconfig\n{"*" * 48}')
+                [print(f'{index} => {match}') for index, match in enumerate(matches)]
+
+                try:
+                    # Prompt user to choose ip by numerical index #
+                    prompt = int(input('\n[+] Enter the numerical index of the ip to serve '
+                                       'connections on: '))
+                    # Set the bind ip to specified index #
+                    ip_addr = matches[prompt]
+                    break
+
+                # If non-base10 string is passed in as input #
+                except ValueError:
+                    print_err('Input must be base 10 numerical number')
+
+                # If index error occurs because attempting to access non-existing index #
+                except IndexError:
+                    print_err('Attempted to access non-existing index .. try again')
+
+        # If an ip could not be found #
+        else:
+            # Print error, log, and exit #
+            print_err('Unable to find ip address for the system with ifconfig')
+            logging.error('Unable to find ip address for the system with ifconfig')
+            sys.exit(5)
 
     # Set socket connection timeout #
     socket.setdefaulttimeout(None)
@@ -218,10 +253,17 @@ def server_init(port: int) -> tuple:
     crypt_nonce = authenticated_encrypt(auth_key, auth_nonce, symm_nonce, session_pass, sock)
     crypt_hmac = authenticated_encrypt(auth_key, auth_nonce, hmac_key, session_pass, sock)
 
+    # Encode the cryptography keys to be sent #
+    b64_auth_key = base64.urlsafe_b64encode(auth_key)
+    b64_auth_nonce = base64.urlsafe_b64encode(auth_nonce)
+    b64_symm_key = base64.urlsafe_b64encode(crypt_key)
+    b64_symm_nonce = base64.urlsafe_b64encode(crypt_nonce)
+    b64_hmac_key = base64.urlsafe_b64encode(crypt_hmac)
+
     # Parse the authenticated components and encrypted symmetrical
     # key, nonce, & HMAC for transit to client #
-    key_bytes = b''.join([auth_key, b'<$>', auth_nonce, b'<$>', crypt_key, b'<$>', crypt_nonce,
-                          b'<$>', crypt_hmac])
+    key_bytes = b''.join([b64_auth_key, 'b<$>', b64_auth_nonce, b'<$>', b64_symm_key, b'<$>',
+                          b64_symm_nonce, b'<$>', b64_hmac_key])
     # Send the parsed bytes with keys to client #
     client_sock.sendall(key_bytes)
 
