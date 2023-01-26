@@ -248,8 +248,6 @@ def main():
 
                     # If the socket received data #
                     if len(chunk) > 0:
-                        logging.info('Initial recv chunk of data: %s\n\n', chunk)
-
                         # Split up any combined chunks of data as list #
                         parsed_inputs = chunk.split(b'<EOL>')
                         # Filters out any empty strings in list #
@@ -257,9 +255,6 @@ def main():
 
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
-                            logging.info('Recv data length before decryption: %s\n\n', len(item))
-                            logging.info('Recv data before decryption: %s\n\n', item)
-
                             # Trim any base64 padding from received data #
                             item = base64_parse(item)
                             # Decode the base64 re-padded item #
@@ -267,9 +262,6 @@ def main():
                                                                      (b'=' * (4 - len(item) % 4)))
                             # Decrypt each item in parsed_inputs per iteration #
                             plain_item = symm_decrypt(symm_key, symm_nonce, hmac_key, decoded_crypt)
-
-                            logging.info('Recv data length after decryption: %s\n\n', len(plain_item))
-                            logging.info('Recv data after decryption: %s\n\n', plain_item)
 
                             # If chunk contain the file name and size #
                             if BUFFER_DIV in plain_item:

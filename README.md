@@ -70,6 +70,8 @@ The AESGCM algorithm utilized features 256 bit and 96 bit nonce as recommended b
 >                           Once connected, the input password is hashed and send to the remote system for authentication. 
 >                           If successfully authenticated, an encrypted symmetrical key is sent back and decrypted using the authenticated password to be returned to main.
 
+> linux_ip_query &nbsp;-&nbsp; Runs ifconfig, gathers results, and displays IPs matched through regex.
+
 > port_check &nbsp;-&nbsp; Creates TCP socket and checks to see if remote port on specified IP address is active.
 
 > server_init &nbsp;-&nbsp; Function is called after test socket connection attempt is not successful indicating a server is current not present on the other end. 

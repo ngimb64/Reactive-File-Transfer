@@ -107,6 +107,46 @@ def client_init(target_ip: str, port: int) -> tuple:
     return sock, symm_key, symm_nonce, hmac_key
 
 
+def linux_ip_query() -> str:
+    """
+    Runs ifconfig, gathers results, and displays IPs matched through regex.
+
+    :return:  The selected IP address to bind to server port.
+    """
+    # Run if config and get the return output #
+    network_data = check_output(['ifconfig'], text=True)
+    # Search ifconfig output data for ip address regex matches #
+    matches = re.findall(r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}', network_data)
+    # If an ip was found in the ifconfig output #
+    if matches:
+        while True:
+            # Display ip addresses found in ifconfig in clean fashion with indexes #
+            print(f'\nThe following IP\'s were found running ifconfig\n{"*" * 48}')
+            [print(f'{index} => {match}') for index, match in enumerate(matches)]
+
+            try:
+                # Prompt user to choose ip by numerical index #
+                prompt = int(input('\n[+] Enter the numerical index of the ip to serve '
+                                   'connections on: '))
+                # Set the bind ip to specified index #
+                return matches[prompt]
+
+            # If non-base10 string is passed in as input #
+            except ValueError:
+                print_err('Input must be base 10 numerical number')
+
+            # If index error occurs because attempting to access non-existing index #
+            except IndexError:
+                print_err('Attempted to access non-existing index .. try again')
+
+    # If an ip could not be found #
+    else:
+        # Print error, log, and exit #
+        print_err('Unable to find ip address for the system with ifconfig')
+        logging.error('Unable to find ip address for the system with ifconfig')
+        sys.exit(5)
+
+
 def port_check(ip_addr: str, port: int) -> bool:
     """
     Creates TCP socket and checks to see if remote port on specified IP address is active.
@@ -159,39 +199,8 @@ def server_init(port: int) -> tuple:
         ip_addr = socket.gethostbyname(hostname)
     # If the OS is Linux #
     else:
-        # Run if config and get the return output #
-        network_data = check_output(['ifconfig'], text=True)
-        # Search ifconfig output data for ip address regex matches #
-        matches = re.findall(r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}', network_data)
-        # If an ip was found in the ifconfig output #
-        if matches:
-            while True:
-                # Display ip addresses found in ifconfig in clean fashion with indexes #
-                print(f'The following IP\'s were found running ifconfig\n{"*" * 48}')
-                [print(f'{index} => {match}') for index, match in enumerate(matches)]
-
-                try:
-                    # Prompt user to choose ip by numerical index #
-                    prompt = int(input('\n[+] Enter the numerical index of the ip to serve '
-                                       'connections on: '))
-                    # Set the bind ip to specified index #
-                    ip_addr = matches[prompt]
-                    break
-
-                # If non-base10 string is passed in as input #
-                except ValueError:
-                    print_err('Input must be base 10 numerical number')
-
-                # If index error occurs because attempting to access non-existing index #
-                except IndexError:
-                    print_err('Attempted to access non-existing index .. try again')
-
-        # If an ip could not be found #
-        else:
-            # Print error, log, and exit #
-            print_err('Unable to find ip address for the system with ifconfig')
-            logging.error('Unable to find ip address for the system with ifconfig')
-            sys.exit(5)
+        # Run ifconfig and select IP from regex results #
+        ip_addr = linux_ip_query()
 
     # Set socket connection timeout #
     socket.setdefaulttimeout(None)
@@ -246,7 +255,7 @@ def server_init(port: int) -> tuple:
     symm_key = AESGCM.generate_key(bit_length=256)
     symm_nonce = os.urandom(96 // 8)
     # Generate HMAC signature for symmetrical data integrity #
-    hmac_key = os.urandom(256//8)
+    hmac_key = os.urandom(256 // 8)
 
     # Encrypt the session symmetrical key, nonce, and hmac for transit #
     crypt_key = authenticated_encrypt(auth_key, auth_nonce, symm_key, session_pass, sock)
@@ -262,7 +271,7 @@ def server_init(port: int) -> tuple:
 
     # Parse the authenticated components and encrypted symmetrical
     # key, nonce, & HMAC for transit to client #
-    key_bytes = b''.join([b64_auth_key, 'b<$>', b64_auth_nonce, b'<$>', b64_symm_key, b'<$>',
+    key_bytes = b''.join([b64_auth_key, b'<$>', b64_auth_nonce, b'<$>', b64_symm_key, b'<$>',
                           b64_symm_nonce, b'<$>', b64_hmac_key])
     # Send the parsed bytes with keys to client #
     client_sock.sendall(key_bytes)

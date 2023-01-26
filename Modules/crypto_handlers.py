@@ -86,16 +86,18 @@ def symm_decrypt(symm_key: bytes, symm_nonce: bytes, hmac_key: bytes, data: byte
     try:
         # Shave the 32 byte HMAC from the end of the data #
         signature = data[-32:]
+        # Save the rest of the data in var #
+        crypt_data = data[:-32]
         # Intialize the HMAC algo instance #
         hmac_algo = hmac.HMAC(hmac_key, hashes.SHA256())
         # Update instance with HMAC data to be verified #
-        hmac_algo.update(data)
+        hmac_algo.update(crypt_data)
         # Verifty the data integrity #
         hmac_algo.verify(signature)
 
         # Initialize AESGCM algo instance #
         aesgcm = AESGCM(symm_key)
-        plain_data = aesgcm.decrypt(symm_nonce, data, None)
+        plain_data = aesgcm.decrypt(symm_nonce, crypt_data, None)
 
     # If error occurs during symmetrical process #
     except (IndexError, InvalidKey, InvalidTag, InvalidSignature, TypeError, UnsupportedAlgorithm,
