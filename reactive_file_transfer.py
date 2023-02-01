@@ -96,7 +96,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
                     # While there is data left in the file to be read #
                     while unread_data > 0:
                         # If amount of unread data will fit in one chunk #
-                        if unread_data <= BUFFER_SIZE - 37:
+                        if unread_data < BUFFER_SIZE - 37:
                             # Put last of the data in send queue #
                             data = send_file.read(unread_data)
                         # If amount of unread data exceeds size of data buffer #
@@ -227,14 +227,10 @@ def main():
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=(file_size + len(chunk)))
 
-                        logging.info('Send data length before encryption: %s\n\n', len(chunk))
-
                         # Encrypt and encode the data chunk to be sent #
                         crypt_chunk, hmac_sig = symm_encrypt(symm_key, symm_nonce, hmac_key, chunk)
                         # Base64 encode encrypted data appended with HMAC signature #
                         encoded_chunk = base64.urlsafe_b64encode(crypt_chunk + hmac_sig)
-
-                        logging.info('Send data length after encryption: %s\n\n', len(crypt_chunk))
 
                         # Send the chunk of data through the TCP connection #
                         sock.sendall(encoded_chunk + b'<EOL>')
