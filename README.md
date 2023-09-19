@@ -1,10 +1,11 @@
-# Reactive File Transfer (RFT)
+<div align="center" style="font-family: monospace">
+<h1>Reactive File Transfer (RFT)</h1>
 ![alt text](https://github.com/ngimb64/Reactive-File-Transfer/blob/main/ReactiveFileTransfer.gif?raw=true)
 ![alt text](https://github.com/ngimb64/Reactive-File-Transfer/blob/main/ReactiveFileTransfer.png?raw=true)
+&#9745;&#65039; Bandit verified &nbsp;|&nbsp; &#9745;&#65039; Synk verified &nbsp;|&nbsp; &#9745;&#65039; Pylint verified 9.89/10
+<br><br>
+</div>
 
-&#9745;&#65039; Bandit verified<br>
-&#9745;&#65039; Synk verified<br>
-&#9745;&#65039; Pylint verified 9.87/10
 
 ## Prereqs 
 This program runs on Windows and Linux, written in Python version 3.10.6
