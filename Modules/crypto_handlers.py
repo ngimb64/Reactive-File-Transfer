@@ -97,6 +97,7 @@ def symm_decrypt(symm_key: bytes, symm_nonce: bytes, hmac_key: bytes, data: byte
 
         # Initialize AESGCM algo instance #
         aesgcm = AESGCM(symm_key)
+        # Decrypt the data with aesgcm symmetrical encryption #
         plain_data = aesgcm.decrypt(symm_nonce, crypt_data, None)
 
     # If error occurs during symmetrical process #

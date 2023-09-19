@@ -58,7 +58,7 @@ def auto_file_incoming():
                     in_file.write(incoming_data)
 
         # If error occurs during file operation #
-        except (IOError, OSError) as file_err:
+        except OSError as file_err:
             # Lookup the file error and log it #
             error_query(str(file_path), 'a', file_err)
 
@@ -109,7 +109,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
                         unread_data -= len(data)
 
             # If error occurs during file operation #
-            except (IOError, OSError) as file_err:
+            except OSError as file_err:
                 # Lookup the file error and log it #
                 error_query(str(file_path), 'rb', file_err)
                 continue
@@ -117,7 +117,7 @@ class OutgoingFileDetector(FileSystemEventHandler):
             # Put EOF descriptor for remote system to know transfer is complete #
             SEND_QUEUE.put(b'<EOF>')
             # Delete file #
-            os.unlink(file_path)
+            file_path.unlink()
 
 
 def auto_file_outgoing():
@@ -222,15 +222,13 @@ def main():
                         if BUFFER_DIV in chunk:
                             # Parse the file name and size from the sent start bytes #
                             file_name, file_size = parse_start_bytes(chunk, BUFFER_DIV)
-
                             # Setup progress-bar for file output #
                             send_progress = progress.add_task(f'[green]Sending  {file_name} ..',
                                                               total=(file_size + len(chunk)))
-
                         # Encrypt and encode the data chunk to be sent #
                         crypt_chunk, hmac_sig = symm_encrypt(symm_key, symm_nonce, hmac_key, chunk)
                         # Base64 encode encrypted data appended with HMAC signature #
-                        encoded_chunk = base64.urlsafe_b64encode(crypt_chunk + hmac_sig)
+                        encoded_chunk = base64.b64encode(crypt_chunk + hmac_sig)
 
                         # Send the chunk of data through the TCP connection #
                         sock.sendall(encoded_chunk + b'<EOL>')
@@ -254,8 +252,7 @@ def main():
                             # Trim any base64 padding from received data #
                             item = base64_parse(item)
                             # Decode the base64 re-padded item #
-                            decoded_crypt = base64.urlsafe_b64decode(item +
-                                                                     (b'=' * (4 - len(item) % 4)))
+                            decoded_crypt = base64.b64decode(item + (b'=' * (4 - len(item) % 4)))
                             # Decrypt each item in parsed_inputs per iteration #
                             plain_item = symm_decrypt(symm_key, symm_nonce, hmac_key, decoded_crypt)
 
@@ -263,13 +260,11 @@ def main():
                             if BUFFER_DIV in plain_item:
                                 # Parse the file name and size from the received start bytes #
                                 file_name, file_size = parse_start_bytes(plain_item, BUFFER_DIV)
-
                                 # Setup progress-bar for file input #
-                                recv_progress = progress.add_task(f'[red]Receiving  {file_name} ..',
+                                recv_progress = progress.add_task(f'[red]Receiving {file_name} ..',
                                                                   total=file_size)
-
                             # Put received data into read queue #
-                            READ_QUEUE.put(plain_item.decode())
+                            READ_QUEUE.put(plain_item.decode(errors='replace'))
                             # Update the progress bar #
                             progress.update(recv_progress, advance=len(item))
 
