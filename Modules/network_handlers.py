@@ -1,4 +1,4 @@
-# pylint: disable=E0401
+# pylint: disable=E0401,W0106
 """ Built-in modules """
 import base64
 import logging
