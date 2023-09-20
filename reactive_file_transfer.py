@@ -16,8 +16,8 @@ from watchdog.observers import Observer
 # Custom modules #
 from Modules.crypto_handlers import symm_decrypt, symm_encrypt
 from Modules.network_handlers import client_init, port_check, server_init
-from Modules.utils import banner_display, base64_parse, error_query, parse_start_bytes, print_err, \
-                          validate_ip, validate_port
+from Modules.utils import (banner_display, error_query, parse_start_bytes, print_err, validate_ip,
+                           validate_port)
 
 
 # Global variables #
@@ -228,7 +228,7 @@ def main():
                         # Encrypt and encode the data chunk to be sent #
                         crypt_chunk, hmac_sig = symm_encrypt(symm_key, symm_nonce, hmac_key, chunk)
                         # Base64 encode encrypted data appended with HMAC signature #
-                        encoded_chunk = base64.b64encode(crypt_chunk + hmac_sig)
+                        encoded_chunk = base64.standard_b64encode(crypt_chunk + hmac_sig)
 
                         # Send the chunk of data through the TCP connection #
                         sock.sendall(encoded_chunk + b'<EOL>')
@@ -250,9 +250,10 @@ def main():
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
                             # Trim any base64 padding from received data #
-                            item = base64_parse(item)
+                            item = item.strip('=')
                             # Decode the base64 re-padded item #
-                            decoded_crypt = base64.b64decode(item + (b'=' * (4 - len(item) % 4)))
+                            decoded_crypt = base64.standard_b64decode(item +
+                                                                      (b'=' * (len(item) % 4)))
                             # Decrypt each item in parsed_inputs per iteration #
                             plain_item = symm_decrypt(symm_key, symm_nonce, hmac_key, decoded_crypt)
 
