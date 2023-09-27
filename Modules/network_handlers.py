@@ -212,8 +212,14 @@ def server_init(port: int) -> tuple:
     sock.listen(1)
     # Notify user host is acting as server #
     print(f'[+] No remote server present .. serving on ({hostname}||{ip_addr}):{port}')
-    # Wait until test connection is received from client socket #
-    test_sock, _ = sock.accept()
+    try:
+        # Wait until test connection is received from client socket #
+        test_sock, _ = sock.accept()
+
+    # If The user decides to exit with Ctrl + c #
+    except KeyboardInterrupt:
+        print('\n[!] Ctrl + C detected .. exiting program')
+        sys.exit(0)
 
     try:
         # Once test connection is active, continually send null bytes
