@@ -250,10 +250,9 @@ def main():
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
                             # Trim any base64 padding from received data #
-                            item = item.strip(b'=')
+                            item = item.rstrip(b'=')
                             # Decode the base64 re-padded item #
-                            decoded_crypt = base64.standard_b64decode(item +
-                                                                      (b'=' * (len(item) % 4)))
+                            decoded_crypt = base64.b64decode(item + b'=' * (-len(item) % 4))
                             # Decrypt each item in parsed_inputs per iteration #
                             plain_item = symm_decrypt(symm_key, symm_nonce, hmac_key, decoded_crypt)
 
