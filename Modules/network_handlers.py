@@ -14,7 +14,7 @@ from argon2.exceptions import HashingError, InvalidHash, VerifyMismatchError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # Custom modules #
 from Modules.crypto_handlers import authenticated_decrypt, authenticated_encrypt
-from Modules.utils import base64_parse, pass_input, print_err, split_handler
+from Modules.utils import pass_input, print_err, split_handler
 
 
 def client_init(target_ip: str, port: int) -> tuple:
@@ -83,13 +83,13 @@ def client_init(target_ip: str, port: int) -> tuple:
     # Split the received bytes based on <$> divisor #
     keys = split_handler(data, sock)
     # Strip any padding to be re-calculated #
-    keys = [base64_parse(key) for key in keys]
+    keys = [key.strip(b'=') for key in keys]
     # Split keys in memory as bytes with re-calculated padding #
-    auth_key = base64.urlsafe_b64decode(keys[0] + (b'=' * (4 - len(keys[0]) % 4)))
-    auth_nonce = base64.urlsafe_b64decode(keys[1] + (b'=' * (4 - len(keys[1]) % 4)))
-    crypt_key = base64.urlsafe_b64decode(keys[2] + (b'=' * (4 - len(keys[2]) % 4)))
-    crypt_nonce = base64.urlsafe_b64decode(keys[3] + (b'=' * (4 - len(keys[3]) % 4)))
-    crypt_hmac = base64.urlsafe_b64decode(keys[4] + (b'=' * (4 - len(keys[4]) % 4)))
+    auth_key = base64.urlsafe_b64decode(keys[0] + (b'=' * len(keys[0] % 4)))
+    auth_nonce = base64.urlsafe_b64decode(keys[1] + (b'=' * len(keys[1] % 4)))
+    crypt_key = base64.urlsafe_b64decode(keys[2] + (b'=' * len(keys[2] % 4)))
+    crypt_nonce = base64.urlsafe_b64decode(keys[3] + (b'=' * len(keys[3] % 4)))
+    crypt_hmac = base64.urlsafe_b64decode(keys[4] + (b'=' * len(keys[4] % 4)))
     # Decrypt the session symmetrical key, nonce, and HMAC #
     symm_key = authenticated_decrypt(auth_key, auth_nonce, crypt_key, session_pass, sock)
     symm_nonce = authenticated_decrypt(auth_key, auth_nonce, crypt_nonce, session_pass, sock)

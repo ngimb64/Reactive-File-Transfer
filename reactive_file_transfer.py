@@ -250,7 +250,7 @@ def main():
                         # Iterate through parsed read bytes as string list #
                         for item in parsed_inputs:
                             # Trim any base64 padding from received data #
-                            item = item.strip('=')
+                            item = item.strip(b'=')
                             # Decode the base64 re-padded item #
                             decoded_crypt = base64.standard_b64decode(item +
                                                                       (b'=' * (len(item) % 4)))
