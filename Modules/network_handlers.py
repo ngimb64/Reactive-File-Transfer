@@ -85,11 +85,11 @@ def client_init(target_ip: str, port: int) -> tuple:
     # Strip any padding to be re-calculated #
     keys = [key.strip(b'=') for key in keys]
     # Split keys in memory as bytes with re-calculated padding #
-    auth_key = base64.urlsafe_b64decode(keys[0] + (b'=' * len(keys[0] % 4)))
-    auth_nonce = base64.urlsafe_b64decode(keys[1] + (b'=' * len(keys[1] % 4)))
-    crypt_key = base64.urlsafe_b64decode(keys[2] + (b'=' * len(keys[2] % 4)))
-    crypt_nonce = base64.urlsafe_b64decode(keys[3] + (b'=' * len(keys[3] % 4)))
-    crypt_hmac = base64.urlsafe_b64decode(keys[4] + (b'=' * len(keys[4] % 4)))
+    auth_key = base64.standard_b64decode(keys[0] + (b'=' * len(keys[0] % 4)))
+    auth_nonce = base64.standard_b64decode(keys[1] + (b'=' * len(keys[1] % 4)))
+    crypt_key = base64.standard_b64decode(keys[2] + (b'=' * len(keys[2] % 4)))
+    crypt_nonce = base64.standard_b64decode(keys[3] + (b'=' * len(keys[3] % 4)))
+    crypt_hmac = base64.standard_b64decode(keys[4] + (b'=' * len(keys[4] % 4)))
     # Decrypt the session symmetrical key, nonce, and HMAC #
     symm_key = authenticated_decrypt(auth_key, auth_nonce, crypt_key, session_pass, sock)
     symm_nonce = authenticated_decrypt(auth_key, auth_nonce, crypt_nonce, session_pass, sock)
@@ -263,11 +263,11 @@ def server_init(port: int) -> tuple:
     crypt_hmac = authenticated_encrypt(auth_key, auth_nonce, hmac_key, session_pass, sock)
 
     # Encode the cryptography keys to be sent #
-    b64_auth_key = base64.urlsafe_b64encode(auth_key)
-    b64_auth_nonce = base64.urlsafe_b64encode(auth_nonce)
-    b64_symm_key = base64.urlsafe_b64encode(crypt_key)
-    b64_symm_nonce = base64.urlsafe_b64encode(crypt_nonce)
-    b64_hmac_key = base64.urlsafe_b64encode(crypt_hmac)
+    b64_auth_key = base64.standard_b64encode(auth_key)
+    b64_auth_nonce = base64.standard_b64encode(auth_nonce)
+    b64_symm_key = base64.standard_b64encode(crypt_key)
+    b64_symm_nonce = base64.standard_b64encode(crypt_nonce)
+    b64_hmac_key = base64.standard_b64encode(crypt_hmac)
 
     # Parse the authenticated components and encrypted symmetrical
     # key, nonce, & HMAC for transit to client #
